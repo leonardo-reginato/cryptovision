@@ -1,23 +1,13 @@
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 import tensorflow as tf
 import typer
 from loguru import logger
-from sklearn.utils.class_weight import compute_class_weight
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.regularizers import l1_l2
-from tqdm import tqdm
-
-import wandb
 from wandb.integration.keras import WandbMetricsLogger
-from cryptovision.config import (
-    IMG_GEN_PARAMS,
-    MODEL_PARAMS,
-    MODELS_DIR,
-    PROCESSED_DATA_DIR,
-)
+import wandb
+from cryptovision.config import MODEL_PARAMS, MODELS_DIR, PROCESSED_DATA_DIR
 
 app = typer.Typer()
 wandb.require("core")
@@ -25,124 +15,117 @@ wandb.require("core")
 
 @app.command()
 def main(
-    # ---- REPLACE DEFAULT PATHS AS APPROPRIATE ----
-    features_path: Path = PROCESSED_DATA_DIR / "features.csv",
-    train_dataset_path: Path = PROCESSED_DATA_DIR / "train.csv",
-    test_dataset_path: Path = PROCESSED_DATA_DIR / "test.csv",
-    labels_path: Path = PROCESSED_DATA_DIR / "labels.csv",
-    model_path: Path = MODELS_DIR / "model.pkl",
-    # -----------------------------------------
+    train_dir: Path = PROCESSED_DATA_DIR / "train",
+    test_dir: Path = PROCESSED_DATA_DIR / "test",
+    model_path: Path = MODELS_DIR / "model.h5",
 ):
+    """Main function to train the model."""
     # Initialize Wandb
-    logger.info("Starting Modeling Training...")
-    wandb.init(project="CryptoVision-Species-DL", config=MODEL_PARAMS)
+    wandb.init(project="CryptoVision 2.0", config=MODEL_PARAMS)
 
     # Load Train & Test Datasets
-    train_df = pd.read_csv(train_dataset_path)
-    test_df = pd.read_csv(test_dataset_path)
-
-    logger.success("Train and Test Datasets Loaded")
-    logger.info(f"Train Dataset Shape: {train_df.shape}")
-    logger.info(f"Test Dataset Shape: {test_df.shape}")
-
-    # Set tensorflow Image Data Generator
-    image_generator = tf.keras.preprocessing.image.ImageDataGenerator(**IMG_GEN_PARAMS)
-
-    train_datagen = image_generator.flow_from_dataframe(
-        dataframe=train_df,
-        x_col="path",
-        y_col=MODEL_PARAMS["target"],
-        target_size=MODEL_PARAMS["image_shape"],
-        color_mode="rgb",
+    train_ds = tf.keras.utils.image_dataset_from_directory(
+        train_dir,
+        labels="inferred",
+        label_mode="categorical",
         batch_size=MODEL_PARAMS["batch_size"],
-        class_mode="categorical",
+        image_size=MODEL_PARAMS["image_shape"],
         shuffle=True,
+        seed=42,
+        validation_split=0.2,
         subset="training",
+        interpolation="bilinear",
     )
 
-    valid_datagen = image_generator.flow_from_dataframe(
-        dataframe=train_df,
-        x_col="path",
-        y_col=MODEL_PARAMS["target"],
-        target_size=MODEL_PARAMS["image_shape"],
-        color_mode="rgb",
+    valid_ds = tf.keras.utils.image_dataset_from_directory(
+        train_dir,
+        labels="inferred",
+        label_mode="categorical",
         batch_size=MODEL_PARAMS["batch_size"],
-        class_mode="categorical",
+        image_size=MODEL_PARAMS["image_shape"],
         shuffle=True,
+        seed=42,
+        validation_split=0.2,
         subset="validation",
+        interpolation="bilinear",
     )
 
-    test_datagen = image_generator.flow_from_dataframe(
-        dataframe=test_df,
-        x_col="path",
-        y_col=MODEL_PARAMS["target"],
-        target_size=MODEL_PARAMS["image_shape"],
-        color_mode="rgb",
+    test_ds = tf.keras.utils.image_dataset_from_directory(
+        test_dir,
+        labels="inferred",
+        label_mode="categorical",
         batch_size=MODEL_PARAMS["batch_size"],
-        class_mode="categorical",
-        shuffle=False,
-    )
-    
-    logger.success("Image Data Generators Initialized")
-
-    # Class Weights Calculation
-    train_df_copy = train_df.copy()
-    train_df_copy["class_indices"] = train_df_copy[MODEL_PARAMS["target"]].map(
-        train_datagen.class_indices
+        image_size=MODEL_PARAMS["image_shape"],
     )
 
-    class_weights = compute_class_weight(
-        class_weight="balanced",
-        classes=np.arange(0, len(train_datagen.class_indices), 1),
-        y=train_df_copy["class_indices"].tolist(),
+    class_names = train_ds.class_names
+    logger.success("Train and Test Datasets Loaded")
+
+    # Autotune
+    AUTOTUNE = tf.data.AUTOTUNE
+    train_ds = train_ds.cache().shuffle(1000).prefetch(buffer_size=AUTOTUNE)
+    valid_ds = valid_ds.cache().prefetch(buffer_size=AUTOTUNE)
+    test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+    # Data Augmentation and Preprocessing
+    preprocess_input = MODEL_PARAMS["img_preprocess"]
+    data_augmentation = tf.keras.Sequential(
+        [
+            tf.keras.layers.RandomFlip("horizontal"),
+            tf.keras.layers.RandomRotation(0.2),
+            tf.keras.layers.RandomZoom(0.2),
+            tf.keras.layers.RandomTranslation(0.1, 0.1),
+            tf.keras.layers.RandomContrast(0.2),
+            tf.keras.layers.RandomBrightness(0.2),
+            tf.keras.layers.RandomCrop(224, 224),
+        ]
     )
-
-    class_weights = dict(enumerate(class_weights))
-
-    logger.success("Class Weights Calculated")
 
     # Create Model
     logger.info("Creating Model...")
-
-    pre_trained_model = MODEL_PARAMS["pre_trained_model"](
+    base_model = MODEL_PARAMS["pre_trained_model"](
         include_top=False,
         weights="imagenet",
         pooling="avg",
         input_shape=MODEL_PARAMS["image_shape"] + (3,),
     )
 
-    for layer in pre_trained_model.layers[-MODEL_PARAMS["unfreeze_layers"] :]:
-        layer.trainable = True
+    if MODEL_PARAMS.get("unfreeze_layers"):
+        for layer in base_model.layers[-MODEL_PARAMS["unfreeze_layers"] :]:
+            layer.trainable = True
+    else:
+        base_model.trainable = False
 
-    input_model = pre_trained_model.input
-    x = pre_trained_model.output
+    inputs = tf.keras.Input(shape=MODEL_PARAMS["image_shape"] + (3,))
+    x = data_augmentation(inputs)
+    x = preprocess_input(x)
+    x = base_model(x, training=True)
+    x = tf.keras.layers.Dropout(MODEL_PARAMS["dropout"])(x)
 
-    for i in range(MODEL_PARAMS["num_layer"]):
+    for i in range(MODEL_PARAMS["dense_layers"]):
         x = tf.keras.layers.Dense(
             MODEL_PARAMS["neurons"][i],
             activation="relu",
-            kernel_regularizer=l1_l2(l1=MODEL_PARAMS["l1"], l2=MODEL_PARAMS["l2"]),
+            kernel_regularizer=l1_l2(l1=0.001, l2=0.001),
         )(x)
         if MODEL_PARAMS["batch_norm"]:
             x = tf.keras.layers.BatchNormalization()(x)
         x = tf.keras.layers.Dropout(MODEL_PARAMS["dropout"])(x)
 
-    output = tf.keras.layers.Dense(
-        len(train_datagen.class_indices), activation="softmax"
-    )(x)
-    model = tf.keras.models.Model(inputs=input_model, outputs=output)
+    output = tf.keras.layers.Dense(len(class_names), activation="softmax")(x)
+    model = tf.keras.models.Model(inputs=inputs, outputs=output)
+
+    logger.info(model.summary())
 
     # Compile Model
     optimizer = tf.keras.optimizers.Adam(learning_rate=MODEL_PARAMS["learning_rate"])
-
     model.compile(
         optimizer=optimizer,
         loss="categorical_crossentropy",
-        metrics=['accuracy','AUC', 'Precision', 'Recall'],
+        metrics=["accuracy", "AUC", "Precision", "Recall"],
     )
 
     logger.success("Model Created")
-
     logger.info("Starting model training...")
 
     # Define callbacks
@@ -157,18 +140,14 @@ def main(
         patience=MODEL_PARAMS["early_stopping_patience"],
         restore_best_weights=True,
     )
+    wandb_logger = WandbMetricsLogger()
 
     # Train the model
     history = model.fit(
-        train_datagen,
+        train_ds,
         epochs=MODEL_PARAMS["epochs"],
-        validation_data=valid_datagen,
-        callbacks=[
-            early_stop,
-            reduce_lr,
-            WandbMetricsLogger(),
-        ],
-        class_weight=class_weights,
+        validation_data=valid_ds,
+        callbacks=[early_stop, reduce_lr, wandb_logger],
     )
 
     logger.success("Model Training Completed")
@@ -177,6 +156,9 @@ def main(
     logger.info("Saving Model...")
     model.save(model_path)
     logger.success("Model Saved")
+
+    # Finish Wandb
+    wandb.finish()
 
 
 if __name__ == "__main__":
