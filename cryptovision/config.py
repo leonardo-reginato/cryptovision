@@ -42,7 +42,7 @@ MODEL_PARAMS = {
     "l1": 0.01,
     "l2": 0.001,
     "learning_rate": 0.0001,
-    "epochs": 150,
+    "epochs": 20,
     "lr_patience": 3,
     "early_stopping_patience": 5,
 }
