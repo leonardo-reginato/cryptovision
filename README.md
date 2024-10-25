@@ -1,5 +1,5 @@
 
-# 🐟 CryptoVision - Pretrained Model Selection
+# 🐟 CryptoVision
 
 Welcome to **CryptoVision**! This project focuses on building a deep learning model to classify **cryptobenthic fishes** 🐠, a group of small reef fishes. Using transfer learning with various pre-trained models, the aim is to identify the **family, genus, and species** of these fishes with high accuracy.
 
