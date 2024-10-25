@@ -26,27 +26,26 @@ FIGURES_DIR = REPORTS_DIR / "figures"
 
 # Model Configuration
 MODEL_PARAMS = {
-    "pre_trained_model": tf.keras.applications.efficientnet_v2.EfficientNetV2S,
-    "img_preprocess": tf.keras.applications.efficientnet_v2.preprocess_input,
-    "target": "species",
-    "min_images_trashold": 50,
     "test_size": 0.2,
     "random_state": 42,
-    "image_shape": (224, 224),
+    "image_shape": [224, 224],
     "batch_size": 64,
-    "unfreeze_layers": None,
+    "unfreeze_layers": False,
     "dense_layers": 1,
-    "neurons": [256],
+    "neurons": 256,
     "batch_norm": True,
     "dropout": 0.2,
-    "l1": 0.01,
-    "l2": 0.001,
+    "l1": 0.0005,
+    "l2": 0.0005,
     "learning_rate": 0.0001,
     "epochs": 20,
+    "attention_layer":True,
+    "pooling_type": "max",
     "lr_patience": 3,
-    "early_stopping_patience": 5,
+    "early_stopping_patience": 3,
+    "loss": "categorical_crossentropy",
+    "metrics": ["accuracy", "AUC", "Precision", "Recall"],
 }
-
 
 
 try:
