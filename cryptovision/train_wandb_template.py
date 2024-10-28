@@ -217,16 +217,16 @@ def main(
             species_to_genus,
         )
         
-        current_time = datetime.now().strftime("%Y%m%d%H%M")
+        today = datetime.now().strftime("%y%m%d%H%M")
         
-        model_path_name = f"/Users/leonardo/Documents/Projects/cryptovision/models/CV_HACPL_RES50V2_F{int(results_ftun['family_accuracy'] *10_000)}_G{int(results_ftun['genus_accuracy'] *10_000)}_S{int(results_ftun['species_accuracy'] *10_000)}_{current_time}.keras"
+        model_path_name = f"/Users/leonardo/Documents/Projects/cryptovision/models/RN50V2_{PARAMS['img_size'][0]}_F{int(results_ftun['family_accuracy'] *100)}_G{int(results_ftun['genus_accuracy'] *100)}_S{int(results_ftun['species_accuracy'] *100)}_HACPL_{today}.keras"
         
         model.save(model_path_name)
         
         # Save the model
         wandb.log_artifact(
             model_path_name,
-            name=f"CV_HACPL_RES50V2_F{int(results_ftun['family_accuracy'] *10_000)}_G{int(results_ftun['genus_accuracy'] *10_000)}_S{int(results_ftun['species_accuracy'] *10_000)}_{current_time}",
+            name=f"RN50V2_{PARAMS['img_size'][0]}_F{int(results_ftun['family_accuracy'] *100)}_G{int(results_ftun['genus_accuracy'] *100)}_S{int(results_ftun['species_accuracy'] *100)}_HACPL_{today}",
             type='model',
         )
         
