@@ -5,6 +5,7 @@ import pandas as pd
 import tensorflow as tf
 from pathlib import Path
 from loguru import logger
+from datetime import datetime
 from wandb.integration.keras import WandbMetricsLogger
 from cryptovision.config import PARAMS, MODELS_DIR, PROCESSED_DATA_DIR
 from cryptovision.tools import ( 
@@ -78,6 +79,7 @@ def main(
         
         # Dataset Setup
         image_df = image_directory_to_pandas(dataset_dir)
+        
         train_df, val_df, test_df = split_image_dataframe(
             image_df, 
             test_size=PARAMS['test_size'], 
@@ -85,6 +87,8 @@ def main(
             random_state=PARAMS['random_state'],
             stratify_by=PARAMS['stratify_by'],
         )
+        
+        logger.info(f"Train: {len(train_df)} ({len(train_df)/len(image_df) * 100:.2f} %), Val: {len(val_df)} ({len(val_df)/len(image_df) * 100:.2f} %), Test: {len(test_df)} ({len(test_df)/len(image_df) * 100:.2f} %)")
         
         # Datasets Building
         train_ds, family_labels, genus_labels, species_labels = build_dataset_from_dataframe(
@@ -140,17 +144,11 @@ def main(
             },
         )
         
-        results_before_training = model.evaluate(test_ds)
-        
-        wandb.log({
-            'family initial accuracy': results_before_training[4],
-            'genus initial accuracy': results_before_training[5],
-            'species initial accuracy': results_before_training[6],
-        })
+        results_before_training = model.evaluate(test_ds, return_dict=True)
 
-        logger.info(f"Initial Family Acc: {results_before_training[4]:.3f}")
-        logger.info(f"Initial Genus Acc: {results_before_training[5]:.3f}")
-        logger.info(f"Initial Species Acc: {results_before_training[6]:.3f}")
+        logger.info(f"Initial Family Acc: {results_before_training['family_accuracy']:.3f}")
+        logger.info(f"Initial Genus Acc: {results_before_training['genus_accuracy']:.3f}")
+        logger.info(f"Initial Species Acc: {results_before_training['species_accuracy']:.3f}")
         
         wandb_logger = WandbMetricsLogger()
         
@@ -165,17 +163,11 @@ def main(
             verbose=PARAMS['verbose'],
         )
         
-        results = model.evaluate(test_ds)
+        results = model.evaluate(test_ds, return_dict=True)
         
-        wandb.log({
-            'family accuracy': results[4],
-            'genus accuracy': results[5],
-            'species accuracy': results[6],
-        })
-        
-        logger.info(f"First Train Family Acc: {results[4]:.3f}")
-        logger.info(f"First Train Genus Acc: {results[5]:.3f}")
-        logger.info(f"First Train Species Acc: {results[6]:.3f}")
+        logger.info(f"First Train Family Acc: {results['family_accuracy']:.3f}")
+        logger.info(f"First Train Genus Acc: {results['genus_accuracy']:.3f}")
+        logger.info(f"First Train Species Acc: {results['species_accuracy']:.3f}")
         
         # Fine-tuning
         base_model = model.layers[2]
@@ -208,18 +200,11 @@ def main(
             verbose=PARAMS['verbose'],
         )
         
-        results_ftun = model.evaluate(test_ds)
-        
-        wandb.log({
-            'family final accuracy': results_ftun[4],
-            'genus final accuracy': results_ftun[5],
-            'species final accuracy': results_ftun[6],
-        })
+        results_ftun = model.evaluate(test_ds, return_dict=True)
 
-        logger.info(f"Fine Tune Family Acc: {results_ftun[4]:.3f}")
-        logger.info(f"Fine Tune Genus Acc: {results_ftun[5]:.3f}")
-        logger.info(f"Fine Tune Species Acc: {results_ftun[6]:.3f}")
-        
+        logger.info(f"Fine Tune Family Acc: {results_ftun['family_accuracy']:.3f}")
+        logger.info(f"Fine Tune Genus Acc: {results_ftun['genus_accuracy']:.3f}")
+        logger.info(f"Fine Tune Species Acc: {results_ftun['species_accuracy']:.3f}")
         
         family_labels, genus_labels, species_labels, genus_to_family, species_to_genus = get_taxonomic_mappings_from_folders(dataset_dir)
         
@@ -232,13 +217,18 @@ def main(
             species_to_genus,
         )
         
+        current_time = datetime.now().strftime("%Y%m%d%H%M")
+        
+        model_path_name = f"/Users/leonardo/Documents/Projects/cryptovision/models/CV_HACPL_RES50V2_F{int(results_ftun['family_accuracy'] *10_000)}_G{int(results_ftun['genus_accuracy'] *10_000)}_S{int(results_ftun['species_accuracy'] *10_000)}_{current_time}.keras"
+        
+        model.save(model_path_name)
+        
         # Save the model
-        #wandb.log_artifact(
-        #    f"CV_{PARAMS['model']['base_model']}_model.keras",
-        #    name=PARAMS['model']['base_model'],
-        #    type='model',
-        #    aliases=[f'ACC{int(results_ftun[4]*10_000)}','ResNet50V2', 'BaseModel']
-        #)
+        wandb.log_artifact(
+            model_path_name,
+            name=f"CV_HACPL_RES50V2_F{int(results_ftun['family_accuracy'] *10_000)}_G{int(results_ftun['genus_accuracy'] *10_000)}_S{int(results_ftun['species_accuracy'] *10_000)}_{current_time}",
+            type='model',
+        )
         
         logger.success(f"Model {PARAMS['model']['base_model']} trained and logged to wandb.")
         
