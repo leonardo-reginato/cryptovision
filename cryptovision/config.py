@@ -25,32 +25,44 @@ FIGURES_DIR = REPORTS_DIR / "figures"
 
 
 # Model Configuration
-MODEL_PARAMS = {
-    "test_size": 0.2,
+PARAMS = {
+    "val_size":0.15,
+    "test_size": 0.15,
     "random_state": 42,
-    "image_shape": [224, 224],
+    "stratify_by": "folder_label",
+    "data_aug":{
+        "flip": 'horizontal',
+        "rotation": 0.2,
+        "zoom": 0.2,
+        "translation": (0.1, 0.1),
+        "contrast": 0.2,
+        "brightness": 0.2,
+    },
+    "img_size": (224, 224),
     "batch_size": 64,
-    "unfreeze_layers": False,
-    "dense_layers": 1,
-    "neurons": 256,
-    "batch_norm": True,
-    "dropout": 0.2,
-    "l1": 0.0005,
-    "l2": 0.0005,
-    "learning_rate": 0.0001,
-    "epochs": 20,
-    "attention_layer":True,
-    "pooling_type": "max",
-    "lr_patience": 3,
-    "early_stopping_patience": 3,
-    "loss": "categorical_crossentropy",
-    "metrics": ["accuracy", "AUC", "Precision", "Recall"],
+    "model":{
+      "base_model":'ResNet50V2',
+      "weights": 'imagenet',
+      "trainable": False,
+      "dropout": 0.2,
+      "unfreeze_layers": False,
+      "shared_layer": 512,
+      "genus_hidden": 256,
+      "species_hidden": 256,
+      "loss": "categorical_crossentropy",
+      "metrics": ["accuracy", "AUC", "Precision", "Recall"],
+      "epochs": 2,
+      'learning_rate': 0.0001,
+      "ftun_last_layers": 70,
+      "ftun_learning_rate": 0.00001,
+      "ftun_epochs": 2,
+    },
+    "verbose":1,
 }
 
 
 try:
     from tqdm import tqdm
-
     logger.remove(0)
     logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True)
 except ModuleNotFoundError:
