@@ -71,7 +71,7 @@ def main(
 ):
     with wandb.init(
         project="CryptoVision - HACPL Trails",
-        name = f"Run-{PARAMS['model']['base_model']}-BaseModel",
+        name = f"{PARAMS['model']['base_model_short']} - Simple",
         config={
             **PARAMS,
         }
