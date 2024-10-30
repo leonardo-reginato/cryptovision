@@ -20,6 +20,9 @@ app = typer.Typer()
 wandb.require("core")
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
+project_name = "CryptoVision - HACPL Trails"
+run_sufix = "Antropic"
+
 def create_model(PARAMS, base_model, preprocess, augmentation, family_labels, genus_labels, species_labels):
     # Model Building
         base_model = base_model(
@@ -39,25 +42,48 @@ def create_model(PARAMS, base_model, preprocess, augmentation, family_labels, ge
         x = tf.keras.layers.Dropout(PARAMS['model']['dropout'])(x)
 
         # Shared dense layer for better feature learning
-        shared_layer = tf.keras.layers.Dense(PARAMS['model']['shared_layer'], activation='relu', name='shared_layer')(x)
+        shared_layer = tf.keras.layers.Dense(PARAMS['model']['shared_layer'], activation=None,)(x)
+        shared_layer = tf.keras.layers.BatchNormalization()(shared_layer)
+        shared_layer = tf.keras.layers.Activation('relu')(shared_layer)
+        shared_layer = tf.keras.layers.Dropout(0.3)(shared_layer)
 
-        # Define family output
-        family_output = tf.keras.layers.Dense(len(family_labels), activation='softmax', name='family')(shared_layer)
+        # Family transformation and output
+        family_transform = tf.keras.layers.Dense(PARAMS['model']['family_transform'], activation=None, name='family_transform')(shared_layer)
+        family_transform = tf.keras.layers.BatchNormalization()(family_transform)
+        family_transform = tf.keras.layers.Activation('relu')(family_transform)
+        family_transform = tf.keras.layers.Dropout(0.2)(family_transform)
+        family_output = tf.keras.layers.Dense(len(family_labels), activation='softmax', name='family')(family_transform)
 
-        # Concatenate the family output with the base model output
-        family_features = tf.keras.layers.Concatenate()([shared_layer, family_output])
-        family_features = tf.keras.layers.BatchNormalization()(family_features)
+        # Enhanced family features with attention mechanism
+        family_attention = tf.keras.layers.Dense(PARAMS['model']['family_attention'], activation='sigmoid')(family_transform)
+        family_features = tf.keras.layers.Multiply()([shared_layer, family_attention])
+        family_features = tf.keras.layers.Concatenate()([family_features, family_output])
 
-        # Define genus output, using family features as additional input
-        genus_hidden = tf.keras.layers.Dense(PARAMS['model']['genus_hidden'], activation='relu')(family_features)
+        # Genus transformation and output with hierarchical attention
+        genus_transform = tf.keras.layers.Dense(PARAMS['model']['genus_transform'], activation=None)(family_features)
+        genus_transform = tf.keras.layers.BatchNormalization()(genus_transform)
+        genus_transform = tf.keras.layers.Activation('relu')(genus_transform)
+        genus_transform = tf.keras.layers.Dropout(0.2)(genus_transform)
+        
+        # Residual connection for genus
+        genus_residual = tf.keras.layers.Dense(PARAMS['model']['genus_residual'], activation='relu')(family_output)
+        genus_hidden = tf.keras.layers.Add()([genus_transform, genus_residual])
         genus_output = tf.keras.layers.Dense(len(genus_labels), activation='softmax', name='genus')(genus_hidden)
 
-        # Concatenate the family and genus outputs with the base model output
-        genus_features = tf.keras.layers.Concatenate()([shared_layer, family_output, genus_output])
-        genus_features = tf.keras.layers.BatchNormalization()(genus_features)
+        # Enhanced genus features with attention
+        genus_attention = tf.keras.layers.Dense(PARAMS['model']['genus_attention'], activation='sigmoid')(genus_hidden)
+        genus_features = tf.keras.layers.Multiply()([shared_layer, genus_attention])
+        genus_features = tf.keras.layers.Concatenate()([genus_features, family_output, genus_output])
 
-        # Define species output, using both family and genus features as additional input
-        species_hidden = tf.keras.layers.Dense(PARAMS['model']['species_hidden'], activation='relu')(genus_features)
+        # Species transformation and output with hierarchical attention
+        species_transform = tf.keras.layers.Dense(PARAMS['model']['species_transform'], activation=None)(genus_features)
+        species_transform = tf.keras.layers.BatchNormalization()(species_transform)
+        species_transform = tf.keras.layers.Activation('relu')(species_transform)
+        species_transform = tf.keras.layers.Dropout(0.2)(species_transform)
+        
+        # Residual connection for species
+        species_residual = tf.keras.layers.Dense(PARAMS['model']['species_residual'], activation='relu')(tf.keras.layers.Concatenate()([family_output, genus_output]))
+        species_hidden = tf.keras.layers.Add()([species_transform, species_residual])
         species_output = tf.keras.layers.Dense(len(species_labels), activation='softmax', name='species')(species_hidden)
 
         # Create the hierarchical model
@@ -71,8 +97,8 @@ def main(
   dataset_dir: Path = PROCESSED_DATA_DIR / "cv_images_dataset"  
 ):
     with wandb.init(
-        project="CryptoVision - HACPL Trails",
-        name = f"{PARAMS['model']['base_model_short']} - Simple Medium",
+        project=project_name,
+        name = f"{PARAMS['model']['base_model_short']} - {run_sufix}",
         config={
             **PARAMS,
         }
@@ -228,7 +254,6 @@ def main(
         wandb.log_artifact(
             model_path_name,
             name = f"hacpl_{PARAMS['model']['base_model_short']}_{PARAMS['img_size'][0]}_f{int(results_ftun['family_accuracy'] *100)}_g{int(results_ftun['genus_accuracy'] *100)}_s{int(results_ftun['species_accuracy'] *100)}_{today}",
-            #name=f"RN50V2_{PARAMS['img_size'][0]}_F{int(results_ftun['family_accuracy'] *100)}_G{int(results_ftun['genus_accuracy'] *100)}_S{int(results_ftun['species_accuracy'] *100)}_HACPL_{today}",
             type='model',
         )
         
