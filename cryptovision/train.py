@@ -72,7 +72,7 @@ def main(
 ):
     with wandb.init(
         project="CryptoVision - HACPL Trails",
-        name = f"{PARAMS['model']['base_model_short']} - Simple",
+        name = f"{PARAMS['model']['base_model_short']} - Simple Medium",
         config={
             **PARAMS,
         }
@@ -220,14 +220,15 @@ def main(
         
         today = datetime.now().strftime("%y%m%d%H%M")
         
-        model_path_name = f"/Users/leonardo/Documents/Projects/cryptovision/models/RN50V2_{PARAMS['img_size'][0]}_F{int(results_ftun['family_accuracy'] *100)}_G{int(results_ftun['genus_accuracy'] *100)}_S{int(results_ftun['species_accuracy'] *100)}_HACPL_{today}.keras"
+        model_path_name = f"/Users/leonardo/Documents/Projects/cryptovision/models/hacpl_{PARAMS['model']['base_model_short']}_{PARAMS['img_size'][0]}_f{int(results_ftun['family_accuracy'] *100)}_g{int(results_ftun['genus_accuracy'] *100)}_s{int(results_ftun['species_accuracy'] *100)}_{today}.keras"
         
         model.save(model_path_name)
         
         # Save the model
         wandb.log_artifact(
             model_path_name,
-            name=f"RN50V2_{PARAMS['img_size'][0]}_F{int(results_ftun['family_accuracy'] *100)}_G{int(results_ftun['genus_accuracy'] *100)}_S{int(results_ftun['species_accuracy'] *100)}_HACPL_{today}",
+            name = f"hacpl_{PARAMS['model']['base_model_short']}_{PARAMS['img_size'][0]}_f{int(results_ftun['family_accuracy'] *100)}_g{int(results_ftun['genus_accuracy'] *100)}_s{int(results_ftun['species_accuracy'] *100)}_{today}",
+            #name=f"RN50V2_{PARAMS['img_size'][0]}_F{int(results_ftun['family_accuracy'] *100)}_G{int(results_ftun['genus_accuracy'] *100)}_S{int(results_ftun['species_accuracy'] *100)}_HACPL_{today}",
             type='model',
         )
         
