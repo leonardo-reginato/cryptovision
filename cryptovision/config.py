@@ -24,47 +24,54 @@ REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 
 
-# Model Configuration
 PARAMS = {
-    "val_size":0.15,
-    "test_size": 0.15,
-    "random_state": 42,
-    "stratify_by": "folder_label",
-    "data_aug":{
-        "flip": 'horizontal',
-        "rotation": 0.2,
-        "zoom": 0.2,
-        "translation": (0.1, 0.1),
-        "contrast": 0.2,
-        "brightness": 0.2,
+    "img_size": (224, 224),                # Image dimensions (height, width)
+    "batch_size": 64,                      # Batch size for training and validation
+    "val_size": 0.15,                      # Validation dataset proportion
+    "test_size": 0.15,                     # Test dataset proportion
+    "random_state": 42,                    # Seed for dataset splitting
+    "stratify_by": "folder_label",         # Column to stratify dataset splits
+
+    # Data Augmentation parameters
+    "data_aug": {
+        "flip": "horizontal",              # Options: 'horizontal', 'vertical', 'horizontal_and_vertical'
+        "rotation": 0.2,                   # Max rotation angle in radians
+        "zoom": 0.2,                       # Zoom range as a float
+        "translation": (0.1, 0.1),         # Horizontal and vertical translation factors
+        "contrast": 0.2,                   # Contrast adjustment factor
+        "brightness": 0.2,                 # Brightness adjustment factor
     },
-    "img_size": (299, 299),
-    "batch_size": 64,
-    "model":{
-      "base_model":'ResNet50V2',
-      "base_model_short": 'rn50v2',
-      "weights": 'imagenet',
-      "trainable": False,
-      "dropout": 0.2,
-      "unfreeze_layers": False,
-      "shared_layer": 512,
-      "family_transform": 256,
-      "family_attention": 512,
-      "genus_transform": 256,
-      "genus_residual": 256,
-      "genus_attention": 512,
-      "species_transform": 256,
-      "species_residual": 256,
-      "loss": "categorical_crossentropy",
-      "metrics": ["accuracy", "AUC", "Precision", "Recall"],
-      "epochs": 10,
-      'learning_rate': 0.0001,
-      "ftun_last_layers": 70,
-      "ftun_learning_rate": 0.00001,
-      "ftun_epochs": 10,
-      "loss_weights": {"family": 1.0,"genus": 0.8,"species": 0.6}
+
+    # Model configuration
+    "model": {
+        "base_model": "ResNet50V2",        # Base model to use for feature extraction
+        "base_model_short": "rn50v2",      # Short name for model logging and saving
+        "weights": "imagenet",             # Pre-trained weights (e.g., 'imagenet')
+        "trainable": False,                # Initial trainability of the base model
+        "dropout": 0.3,                    # Dropout rate for regularization
+        "shared_layer": 512,               # Neurons in the shared dense layer
+        "family_transform": 512,           # Neurons in the family transformer layer
+        "family_attention": 512,           # Neurons in family attention layer
+        "genus_transform": 512,            # Neurons in the genus transformer layer
+        "genus_residual": 512,             # Neurons in genus residual connection
+        "genus_attention": 512,            # Neurons in genus attention layer
+        "species_transform": 512,          # Neurons in species transformer layer
+        "species_residual": 512,           # Neurons in species residual connection
+
+        # Training parameters
+        "learning_rate": 1e-4,             # Initial learning rate
+        "epochs": 2,                      # Number of epochs for initial training
+        "ftun_last_layers": 70,            # Number of last layers to unfreeze in fine-tuning
+        "ftun_learning_rate": 1e-5,        # Learning rate for fine-tuning
+        "ftun_epochs": 3,                 # Number of epochs for fine-tuning
+        "loss_weights": {"family": 1.0, "genus": 1.0, "species": 1.0},  # Loss weighting for each output
     },
-    "verbose":1,
+
+    # Evaluation metrics
+    "metrics": ["accuracy", "AUC", "Precision", "Recall"],  # Metrics for each taxonomic level
+
+    # Logging and verbosity
+    "verbose": 0,                          # Verbosity mode for training output
 }
 
 
