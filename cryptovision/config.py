@@ -62,6 +62,7 @@ PARAMS = {
       "ftun_last_layers": 70,
       "ftun_learning_rate": 0.00001,
       "ftun_epochs": 10,
+      "loss_weights": {"family": 1.0,"genus": 0.8,"species": 0.6}
     },
     "verbose":1,
 }
