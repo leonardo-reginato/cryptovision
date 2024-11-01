@@ -5,21 +5,21 @@ from pathlib import Path
 from datetime import datetime
 from loguru import logger
 from wandb.integration.keras import WandbMetricsLogger
-from cryptovision.config import PARAMS, PROCESSED_DATA_DIR
+from cryptovision.config import PARAMS, PROCESSED_DATA_DIR, PROJ_NAME
 from cryptovision.tools import (
     image_directory_to_pandas,
     split_image_dataframe,
     tf_dataset_from_pandas,
 )
 from cryptovision.ai_architecture import (
-    proteon_model, augmentation_layer, combined_hierarchical_loss)
+    proteon_model, augmentation_layer, simple_hacpl_model)
 
 # Initialize Typer app and set mixed precision for TensorFlow
 app = typer.Typer()
 tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
-project_name = "CryptoVision - HACPL Trials"
-run_sufix = "Proteon"
+
+run_sufix = PARAMS["run_sufix"]
 
 # Matrics Logger with Wandb
 def log_metrics(model, target_dataset, prefix,):
@@ -44,7 +44,7 @@ def main(
 ):
     # Initialize Weights and Biases run
     with wandb.init(
-        project=project_name,
+        project=PROJ_NAME,
         name=f"{PARAMS['model']['base_model_short']} - {run_sufix}",
         config={**PARAMS},
     ) as run:
@@ -121,11 +121,34 @@ def main(
 
         # Training Phase
         wandb_logger = WandbMetricsLogger()
+        
+        # Define Early Stopping
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+            monitor="val_loss",
+            patience=PARAMS["model"]["early_stopping_patience"],
+            restore_best_weights=True,
+        )
+        
+        # Define Reduce Learning Rate on Plateau
+        reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=PARAMS["model"]["lr_factor"],
+            patience=PARAMS["model"]["lr_patience"],
+            min_lr=PARAMS["model"]["lr_min"],
+        )
+        
+        # Define Model Checkpoint
+        model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
+            filepath=f"/Users/leonardo/Documents/Projects/cryptovision/models/hapcl_model.keras",
+            monitor="val_loss",
+            save_best_only=True,
+        )
+        
         history = model.fit(
             train_ds,
             epochs=PARAMS["model"]["epochs"],
             validation_data=val_ds,
-            callbacks=[wandb_logger],
+            callbacks=[wandb_logger, early_stopping, reduce_lr, model_checkpoint],
             verbose=PARAMS["verbose"],
         )
 
@@ -143,9 +166,9 @@ def main(
         model.compile(
             optimizer=tf.keras.optimizers.RMSprop(learning_rate=PARAMS["model"]["ftun_learning_rate"]),
             loss={
-                'family': lambda y_true, y_pred: combined_hierarchical_loss(y_true, y_pred, y_true, y_pred, y_true, y_pred),
-                'genus': lambda y_true, y_pred: combined_hierarchical_loss(y_true, y_pred, y_true, y_pred, y_true, y_pred),
-                'species': lambda y_true, y_pred: combined_hierarchical_loss(y_true, y_pred, y_true, y_pred, y_true, y_pred),
+                'family': 'categorical_focal_crossentropy',
+                'genus': 'categorical_focal_crossentropy',
+                'species': 'categorical_focal_crossentropy',
             },
             metrics={
                 "family": PARAMS["metrics"],
@@ -162,7 +185,7 @@ def main(
             epochs=total_epochs,
             initial_epoch=len(history.epoch),
             validation_data=val_ds,
-            callbacks=[wandb_logger],
+            callbacks=[wandb_logger, early_stopping, reduce_lr, model_checkpoint],
             verbose=PARAMS["verbose"],
         )
 

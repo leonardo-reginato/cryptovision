@@ -162,6 +162,58 @@ def proteon_model(
 
     return Model(inputs=inputs, outputs=[family_output, genus_output, species_output])
 
+
+# Simple Model
+def simple_hacpl_model(
+    n_families, 
+    n_genera, 
+    n_species, 
+    input_shape=(224,224,3), 
+    base_weights="imagenet", 
+    base_trainable=False, 
+    augmentation_layer=None,
+    shared_layer_neurons=512,
+    shared_layer_dropout=0.3,
+    genus_hidden_neurons=512,
+    specie_hidden_neurons=512,
+):
+    
+    # Base Model
+    base_model = ResNet50V2(include_top=False, weights=base_weights, input_shape=input_shape)
+    base_model.trainable = base_trainable
+
+    # Input and data augmentation layers
+    inputs = Input(shape=input_shape)
+    x = augmentation_layer(inputs) if augmentation_layer else inputs  
+    x = resnet_preprocess(x)  
+    x = base_model(x, training=False)
+    
+    # Shared dense layer for better feature learning
+    shared_layer = tf.keras.layers.Dense(shared_layer_neurons, activation=None, name='shared_layer')(x)
+    shared_layer = BatchNormalization()(shared_layer)
+    shared_layer = Activation('relu')(shared_layer)
+    shared_layer = Dropout(shared_layer_dropout)(shared_layer)
+
+    # Define family output
+    family_output = tf.keras.layers.Dense(n_families, activation='softmax', name='family')(shared_layer)
+
+    # Concatenate the family output with the base model output
+    family_features = tf.keras.layers.Concatenate()([shared_layer, family_output])
+
+    # Define genus output, using family features as additional input
+    genus_hidden = tf.keras.layers.Dense(genus_hidden_neurons, activation='relu')(family_features)
+    genus_output = tf.keras.layers.Dense(n_genera, activation='softmax', name='genus')(genus_hidden)
+
+    # Concatenate the family and genus outputs with the base model output
+    genus_features = tf.keras.layers.Concatenate()([shared_layer, family_output, genus_output])
+
+    # Define species output, using both family and genus features as additional input
+    species_hidden = tf.keras.layers.Dense(specie_hidden_neurons, activation='relu')(genus_features)
+    species_output = tf.keras.layers.Dense(n_species, activation='softmax', name='species')(species_hidden)
+
+    # Create the hierarchical model
+    model = tf.keras.Model(inputs, [family_output, genus_output, species_output])
+
 # Focal Loss function
 def focal_loss(gamma=2.0, alpha=0.25):
     def focal_loss_fixed(y_true, y_pred):

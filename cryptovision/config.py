@@ -23,8 +23,12 @@ MODELS_DIR = PROJ_ROOT / "models"
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 
+PROJ_NAME = "CryptoVision - Training"
+PROJ_TASK = "HACPL Model Training"
 
+# Parameters
 PARAMS = {
+    "run_sufix": "Proteon",                # Suffix for run name
     "img_size": (224, 224),                # Image dimensions (height, width)
     "batch_size": 64,                      # Batch size for training and validation
     "val_size": 0.15,                      # Validation dataset proportion
@@ -57,14 +61,18 @@ PARAMS = {
         "genus_attention": 512,            # Neurons in genus attention layer
         "species_transform": 512,          # Neurons in species transformer layer
         "species_residual": 512,           # Neurons in species residual connection
+        "early_stopping_patience": 10,     # Patience for early stopping
+        "lr_factor": 0.5,                  # Learning rate factor
+        "lr_patience": 5,                  # Patience for learning rate reduction
+        "lr_min": 1e-6,                    # Minimum learning rate
 
         # Training parameters
         "learning_rate": 1e-4,             # Initial learning rate
-        "epochs": 2,                      # Number of epochs for initial training
+        "epochs": 20,                      # Number of epochs for initial training
         "ftun_last_layers": 70,            # Number of last layers to unfreeze in fine-tuning
         "ftun_learning_rate": 1e-5,        # Learning rate for fine-tuning
-        "ftun_epochs": 3,                 # Number of epochs for fine-tuning
-        "loss_weights": {"family": 1.0, "genus": 1.0, "species": 1.0},  # Loss weighting for each output
+        "ftun_epochs": 10,                 # Number of epochs for fine-tuning
+        "loss_weights": {"family": 1.0, "genus": 0.8, "species": 0.6},  # Loss weighting for each output
     },
 
     # Evaluation metrics
