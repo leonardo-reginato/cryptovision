@@ -187,6 +187,7 @@ def simple_hacpl_model(
     x = augmentation_layer(inputs) if augmentation_layer else inputs  
     x = resnet_preprocess(x)  
     x = base_model(x, training=False)
+    x = GlobalAveragePooling2D()(x)
     
     # Shared dense layer for better feature learning
     shared_layer = tf.keras.layers.Dense(shared_layer_neurons, activation=None, name='shared_layer')(x)

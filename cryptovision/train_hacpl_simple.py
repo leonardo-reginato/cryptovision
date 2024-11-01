@@ -16,6 +16,7 @@ from cryptovision.ai_architecture import (
 
 # Initialize Typer app and set mixed precision for TensorFlow
 app = typer.Typer()
+wandb.require("core")
 tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
 
