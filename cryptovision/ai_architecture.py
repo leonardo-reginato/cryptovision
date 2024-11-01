@@ -213,6 +213,8 @@ def simple_hacpl_model(
 
     # Create the hierarchical model
     model = tf.keras.Model(inputs, [family_output, genus_output, species_output])
+    
+    return model
 
 # Focal Loss function
 def focal_loss(gamma=2.0, alpha=0.25):

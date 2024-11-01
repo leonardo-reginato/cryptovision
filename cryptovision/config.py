@@ -27,9 +27,11 @@ PROJ_NAME = "CryptoVision - Training"
 PROJ_TASK = "HACPL Model Training"
 
 # Parameters
+
+
 PARAMS = {
-    "run_sufix": "Proteon",                # Suffix for run name
-    "img_size": (224, 224),                # Image dimensions (height, width)
+    "run_sufix": "Simple",                 # Suffix for run name
+    "img_size": (299, 299),                # Image dimensions (height, width)
     "batch_size": 64,                      # Batch size for training and validation
     "val_size": 0.15,                      # Validation dataset proportion
     "test_size": 0.15,                     # Test dataset proportion
@@ -54,13 +56,8 @@ PARAMS = {
         "trainable": False,                # Initial trainability of the base model
         "dropout": 0.3,                    # Dropout rate for regularization
         "shared_layer": 512,               # Neurons in the shared dense layer
-        "family_transform": 512,           # Neurons in the family transformer layer
-        "family_attention": 512,           # Neurons in family attention layer
-        "genus_transform": 512,            # Neurons in the genus transformer layer
-        "genus_residual": 512,             # Neurons in genus residual connection
-        "genus_attention": 512,            # Neurons in genus attention layer
-        "species_transform": 512,          # Neurons in species transformer layer
-        "species_residual": 512,           # Neurons in species residual connection
+        "genus_hidden": 256,               # Neurons in the genus-level dense layer
+        "species_hidden": 128,             # Neurons in the species-level dense layer
         "early_stopping_patience": 10,     # Patience for early stopping
         "lr_factor": 0.5,                  # Learning rate factor
         "lr_patience": 5,                  # Patience for learning rate reduction
