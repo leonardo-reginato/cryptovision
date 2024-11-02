@@ -27,8 +27,6 @@ PROJ_NAME = "CryptoVision - Training"
 PROJ_TASK = "HACPL Model Training"
 
 # Parameters
-
-
 PARAMS = {
     "run_sufix": "Simple",                 # Suffix for run name
     "img_size": (299, 299),                # Image dimensions (height, width)
