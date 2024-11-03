@@ -18,7 +18,6 @@ from cryptovision.ai_architecture import (
 app = typer.Typer()
 tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
-
 run_sufix = PARAMS["run_sufix"]
 
 # Matrics Logger with Wandb
