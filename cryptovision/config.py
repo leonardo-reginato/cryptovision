@@ -30,7 +30,7 @@ PROJ_TASK = "HACPL Model Training"
 SETUP = {
     # General Setup
     "seed": 42,
-    "verbose": 0,
+    "verbose": 2,
     'batch_size': 64,
     "img_size": (299, 299),
     "sufix": "Proteon_299",
