@@ -5,6 +5,8 @@ from loguru import logger
 
 import tensorflow as tf
 
+from datetime import datetime
+
 # Load environment variables from .env file if it exists
 load_dotenv()
 
@@ -33,10 +35,10 @@ SETUP = {
     "verbose": 2,
     'batch_size': 64,
     "img_size": (299, 299),
-    "sufix": "Proteon_299",
+    "sufix": "proteon",
     "arch_type": "hacpl",
     "base_model_nickname": "rn50v2",
-    "version": "v1",
+    "version": f"v{datetime.now().strftime('%y%m%d%H%M')}",
     
     # Dataset Setup
     "val_size": 0.15,

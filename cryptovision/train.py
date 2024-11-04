@@ -2,7 +2,6 @@ import wandb
 import typer
 import tensorflow as tf
 from pathlib import Path
-from datetime import datetime
 from loguru import logger
 from wandb.integration.keras import WandbMetricsLogger
 from cryptovision.config import (
@@ -18,6 +17,13 @@ from cryptovision.ai_architecture import (
 # Initialize Typer app and set mixed precision for TensorFlow
 app = typer.Typer()
 tf.keras.mixed_precision.set_global_policy("mixed_float16")
+
+model_name = (
+            f"{SETUP['sufix']}_"
+            f"{SETUP['arch_type']}_"
+            f"{SETUP['base_model_nickname']}_"
+            f"{SETUP['version']}"
+        )
 
 
 # Matrics Logger with Wandb
@@ -125,11 +131,20 @@ def main(
             min_lr=SETUP["lr_min"],
         )
         
+        # Save the best model
+        checkpoint = tf.keras.callbacks.ModelCheckpoint(
+            filepath=f"models/{model_name}.keras",  # Path to save the model
+            monitor="val_loss",  # Metric to monitor for improvement
+            save_best_only=True,  # Save only the best model
+            mode="min",  # Minimize the monitored metric
+            verbose=0  # Print messages when saving a model
+        )
+        
         history = model.fit(
             train_ds,
             epochs=SETUP["epochs"],
             validation_data=val_ds,
-            callbacks=[wandb_logger, early_stopping, reduce_lr],
+            callbacks=[wandb_logger, early_stopping, reduce_lr, checkpoint],
             verbose=SETUP["verbose"],
         )
 
@@ -158,7 +173,7 @@ def main(
             epochs=total_epochs,
             initial_epoch=len(history.epoch),
             validation_data=val_ds,
-            callbacks=[wandb_logger, early_stopping, reduce_lr],
+            callbacks=[wandb_logger, early_stopping, reduce_lr, checkpoint],
             verbose=SETUP["verbose"],
         )
 
@@ -166,13 +181,6 @@ def main(
         log_metrics(model, test_ds, "fine-tuned")
 
         # Model Saving
-        model_name = (
-            f"{SETUP['sufix']}_"
-            f"{SETUP['arch_type']}_"
-            f"{SETUP['base_model_nickname']}_"
-            f"{SETUP['version']}"
-            f"{datetime.now().strftime('%Y%m%d%H%M')}"
-        )
         model.save(f"models/{model_name}.keras")
 
         wandb.log_artifact(
