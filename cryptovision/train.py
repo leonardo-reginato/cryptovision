@@ -167,7 +167,7 @@ def main(
 
         # Model Saving
         model_name = (
-            f"models/{SETUP['sufix']}_{SETUP['arch_type']}_{SETUP['base_model_nickname']}_{SETUP['version']}"
+            f"{SETUP['sufix']}_{SETUP['arch_type']}_{SETUP['base_model_nickname']}_{SETUP['version']}"
         )
         model.save(f"models/{model_name}.keras")
 
