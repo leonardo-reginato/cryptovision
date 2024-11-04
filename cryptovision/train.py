@@ -6,24 +6,19 @@ from datetime import datetime
 from loguru import logger
 from wandb.integration.keras import WandbMetricsLogger
 from cryptovision.config import (
-    PROCESSED_DATA_DIR, PROJ_NAME, SETTINGS, 
-    AUG_SETTINGS, MODEL_SETTINGS)
+    PROCESSED_DATA_DIR, PROJ_NAME, SETUP, PROTEON, PHORCYS)
 from cryptovision.tools import (
     image_directory_to_pandas,
     split_image_dataframe,
     tf_dataset_from_pandas,
 )
 from cryptovision.ai_architecture import (
-    proteon_model, augmentation_layer, simple_hacpl_model)
+    proteon, augmentation_layer, phorcys)
 
 # Initialize Typer app and set mixed precision for TensorFlow
 app = typer.Typer()
 tf.keras.mixed_precision.set_global_policy("mixed_float16")
 
-run_sufix = SETTINGS['run_sufix']
-settings = SETTINGS
-model_settings = MODEL_SETTINGS
-aug_settings = AUG_SETTINGS
 
 # Matrics Logger with Wandb
 def log_metrics(model, target_dataset, prefix,):
@@ -49,18 +44,18 @@ def main(
     # Initialize Weights and Biases run
     with wandb.init(
         project=PROJ_NAME,
-        name = f"{model_settings['base_model_short']} - {run_sufix}",
-        config={**model_settings},
+        name = f"{SETUP['sufix']}",
+        config={**SETUP,**PROTEON,},
     ) as run:
         
         # Dataset Setup
         image_df = image_directory_to_pandas(dataset_dir)
         train_df, val_df, test_df = split_image_dataframe(
             image_df,
-            test_size=settings["test_size"],
-            val_size=settings["val_size"],
-            random_state=settings["random_state"],
-            stratify_by=settings["stratify_by"],
+            test_size=SETUP["test_size"],
+            val_size=SETUP["val_size"],
+            random_state=SETUP["seed"],
+            stratify_by=SETUP["stratify_by"],
         )
 
         logger.info(
@@ -71,53 +66,42 @@ def main(
 
         # Dataset Preparation
         train_ds, family_labels, genus_labels, species_labels = tf_dataset_from_pandas(
-            train_df, settings["batch_size"], settings["img_size"]
+            train_df, SETUP["batch_size"], SETUP["img_size"]
         )
-        val_ds, _, _, _ = tf_dataset_from_pandas(val_df, settings["batch_size"], settings["img_size"])
-        test_ds, _, _, _ = tf_dataset_from_pandas(test_df, settings["batch_size"], settings["img_size"])
+        val_ds, _, _, _ = tf_dataset_from_pandas(val_df, SETUP["batch_size"], SETUP["img_size"])
+        test_ds, _, _, _ = tf_dataset_from_pandas(test_df, SETUP["batch_size"], SETUP["img_size"])
 
         # Define Data Augmentation
         data_augmentation = augmentation_layer(
-            flip=aug_settings["flip"],
-            rotation=aug_settings["rotation"],
-            zoom=aug_settings["zoom"],
+            flip=SETUP['aug']["flip"],
+            rotation=SETUP['aug']["rotation"],
+            zoom=SETUP['aug']["zoom"],
             translation=(0.1, 0.1),
-            contrast=aug_settings["contrast"],
-            brightness=aug_settings["brightness"],
+            contrast=SETUP['aug']["contrast"],
+            brightness=SETUP['aug']["brightness"],
         )
 
         # Model Creation
-        model = proteon_model(
-            input_shape=settings["img_size"] + (3,),
+        model = proteon(
+            input_shape=PROTEON["input_shape"],
             n_families=len(family_labels),
             n_genera=len(genus_labels),
             n_species=len(species_labels),
-            base_weights=model_settings["weights"],
-            base_trainable=model_settings["trainable"],
-            se_ratio=16,
-            shared_layer_neurons=model_settings["shared_layer"],
-            shared_layer_dropout=model_settings["dropout"],
-            family_transform_neurons=model_settings["family_hidden"],
-            genus_transform_neurons=model_settings["genus_hidden"],
-            species_transform_neurons=model_settings["species_hidden"],
-            attention_neurons=model_settings["attention_neurons"],
+            shared_layer_neurons=PROTEON["shared_layer"],
+            shared_layer_dropout=PROTEON["dropout"],
+            family_transform_neurons=PROTEON["family_hidden"],
+            genus_transform_neurons=PROTEON["genus_hidden"],
+            species_transform_neurons=PROTEON["species_hidden"],
+            attention_neurons=PROTEON["attention_neurons"],
             augmentation_layer=data_augmentation
         )
 
         # Model Compilation
         model.compile(                                                                                                                                  
-            optimizer=tf.keras.optimizers.Adam(learning_rate=model_settings["learning_rate"]),
-            loss={
-                'family': 'categorical_focal_crossentropy',
-                'genus': 'categorical_focal_crossentropy',
-                'species': 'categorical_focal_crossentropy',
-            },
-            metrics={
-                "family": model_settings["metrics"],
-                "genus": model_settings["metrics"],
-                "species": model_settings["metrics"],
-            },
-            loss_weights=model_settings["loss_weights"],
+            optimizer=tf.keras.optimizers.Adam(learning_rate=SETUP["learning_rate"]),
+            loss=SETUP['loss'],
+            metrics=SETUP['metrics'],
+            loss_weights=SETUP["loss_weights"],
         )
 
         # Log Metrics before Training
@@ -128,32 +112,25 @@ def main(
         
         # Define Early Stopping
         early_stopping = tf.keras.callbacks.EarlyStopping(
-            monitor="val_loss",
-            patience=model_settings["early_stopping_patience"],
-            restore_best_weights=True,
+            monitor=SETUP["monitor"],
+            patience=SETUP["early_stopping"],
+            restore_best_weights=SETUP['restore_best_weights'],
         )
         
         # Define Reduce Learning Rate on Plateau
         reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss",
-            factor=model_settings["lr_factor"],
-            patience=model_settings["lr_patience"],
-            min_lr=model_settings["lr_min"],
-        )
-        
-        # Define Model Checkpoint
-        model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            filepath=f"/Users/leonardo/Documents/Projects/cryptovision/models/hapcl_model.keras",
-            monitor="val_loss",
-            save_best_only=True,
+            monitor=SETUP["monitor"],
+            factor=SETUP["lr_factor"],
+            patience=SETUP["lr_patience"],
+            min_lr=SETUP["lr_min"],
         )
         
         history = model.fit(
             train_ds,
-            epochs=model_settings["epochs"],
+            epochs=SETUP["epochs"],
             validation_data=val_ds,
-            callbacks=[wandb_logger, early_stopping, reduce_lr, model_checkpoint],
-            verbose=settings["verbose"],
+            callbacks=[wandb_logger, early_stopping, reduce_lr],
+            verbose=SETUP["verbose"],
         )
 
         # Log Metrics after Training
@@ -162,54 +139,45 @@ def main(
         # Fine-tuning Phase
         base_model = model.layers[2]
         base_model.trainable = True
-        for layer in base_model.layers[:-model_settings["ftun_last_layers"]]:
+        for layer in base_model.layers[:-SETUP["ftun_last_layers"]]:
             layer.trainable = False
 
-        logger.info(f"Unfreezing the last {model_settings['ftun_last_layers']} layers")
+        logger.info(f"Unfreezing the last {SETUP['ftun_last_layers']} layers")
         
         model.compile(
-            optimizer=tf.keras.optimizers.RMSprop(learning_rate=model_settings["ftun_learning_rate"]),
-            loss={
-                'family': 'categorical_focal_crossentropy',
-                'genus': 'categorical_focal_crossentropy',
-                'species': 'categorical_focal_crossentropy',
-            },
-            metrics={
-                "family": model_settings["metrics"],
-                "genus": model_settings["metrics"],
-                "species": model_settings["metrics"],
-            },
-            loss_weights=model_settings["loss_weights"],
+            optimizer=tf.keras.optimizers.RMSprop(learning_rate=SETUP["ftun_learning_rate"]),
+            loss=SETUP['loss'],
+            metrics=SETUP['metrics'],
+            loss_weights=SETUP["loss_weights"],
         )
 
-        total_epochs = model_settings["epochs"] + model_settings["ftun_epochs"]
+        total_epochs = SETUP["epochs"] + SETUP["ftun_epochs"]
         
         history_fine = model.fit(
             train_ds,
             epochs=total_epochs,
             initial_epoch=len(history.epoch),
             validation_data=val_ds,
-            callbacks=[wandb_logger, early_stopping, reduce_lr, model_checkpoint],
-            verbose=settings["verbose"],
+            callbacks=[wandb_logger, early_stopping, reduce_lr],
+            verbose=SETUP["verbose"],
         )
 
         # Log Metrics after Fine-tuning
         log_metrics(model, test_ds, "fine-tuned")
 
         # Model Saving
-        today = datetime.now().strftime("%y%m%d%H%M")
-        model_path_name = (
-            f"/Users/leonardo/Documents/Projects/cryptovision/models/hacpl_{model_settings['base_model_short']}_{settings['img_size'][0]}_{run_sufix}_{today}.keras"
+        model_name = (
+            f"models/{SETUP['sufix']}_{SETUP['arch_type']}_{SETUP['base_model_nickname']}_{SETUP['version']}"
         )
-        model.save(model_path_name)
+        model.save(f"models/{model_name}.keras")
 
         wandb.log_artifact(
-            model_path_name,
-            name=f"hacpl_{model_settings['base_model_short']}_{settings['img_size'][0]}_{run_sufix}_{today}",
+            f"models/{model_name}.keras",
+            name=model_name,
             type="model",
         )
 
-        logger.success(f"Model {model_settings['base_model']} trained and logged to wandb.")
+        logger.success(f"Model {model_name} trained and logged to wandb.")
 
 if __name__ == "__main__":
     app()

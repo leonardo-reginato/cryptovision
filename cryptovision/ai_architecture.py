@@ -10,6 +10,7 @@ from tensorflow.keras.applications import ResNet50V2                            
 from tensorflow.keras.applications.resnet_v2 import preprocess_input as resnet_preprocess       # type: ignore
 
 
+
 # Data Augmentation
 def augmentation_layer(
     flip="horizontal",
@@ -80,8 +81,9 @@ def transformer_layer(neurons, activation='relu', dropout_rate=0.2):
         return x
     return layer
 
+
 # Proteon Model Function
-def proteon_model(
+def proteon(
     input_shape=(224, 224, 3), 
     n_families=10, 
     n_genera=10, 
@@ -164,7 +166,7 @@ def proteon_model(
 
 
 # Simple Model
-def simple_hacpl_model(
+def phorcys(
     n_families, 
     n_genera, 
     n_species, 
@@ -216,6 +218,7 @@ def simple_hacpl_model(
     model = tf.keras.Model(inputs, [family_output, genus_output, species_output])
     
     return model
+
 
 # Focal Loss function
 def focal_loss(gamma=2.0, alpha=0.25):

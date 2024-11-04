@@ -27,53 +27,86 @@ PROJ_NAME = "CryptoVision - Training"
 PROJ_TASK = "HACPL Model Training"
 
 # Settings
-SETTINGS = {
-    "run_sufix": "Proteon_299",
+SETUP = {
+    # General Setup
     "seed": 42,
-    "verbose": 1,
+    "verbose": 0,
+    'batch_size': 64,
     "img_size": (299, 299),
-    "batch_size": 64,
+    "sufix": "Proteon_299",
+    "arch_type": "hacpl",
+    "base_model_nickname": "rn50v2",
+    "version": "v1",
+    
+    # Dataset Setup
     "val_size": 0.15,
     "test_size": 0.15,
-    "random_state": 42,
     "stratify_by": "folder_label",
+    
+    # Augmentation Setup
+    'aug':{
+        "flip": "horizontal",
+        "rotation": 0.2,
+        "zoom": 0.2,
+        "translation": (0.1, 0.1),
+        "contrast": 0.2,
+        "brightness": 0.2,
+    },
+    
+    # Compile Setup
+    "learning_rate": 1e-4,
+    "loss": {
+        "family": "categorical_focal_crossentropy",
+        "genus": "categorical_focal_crossentropy",
+        "species": "categorical_focal_crossentropy",
+    },
+    "metrics": {
+        "family": ["accuracy", "AUC", "Precision", "Recall"],
+        "genus": ["accuracy", "AUC", "Precision", "Recall"],
+        "species": ["accuracy", "AUC", "Precision", "Recall"],
+    },
+    "loss_weights": {
+        "family": 1.0,
+        "genus": 0.8,
+        "species": 0.6,
+    },
+    
+    # Mode Training Setup
+    "epochs": 2,
+    "monitor": "val_loss",
+    "early_stopping": 10,
+    "restore_best_weights": True,
+    "lr_factor": 0.5,
+    "lr_patience": 5,
+    "lr_min": 1e-6,
+    
+    # Fine-tuning Setup
+    "ftun_last_layers": 70,
+    "ftun_learning_rate": 1e-5,
+    "ftun_epochs": 2,  
 }
 
-# Data Augmentation
-AUG_SETTINGS = {
-    "flip": "horizontal",              # Options: 'horizontal', 'vertical', 'horizontal_and_vertical'
-    "rotation": 0.2,                   # Max rotation angle in radians
-    "zoom": 0.2,                       # Zoom range as a float
-    "translation": (0.1, 0.1),         # Horizontal and vertical translation factors
-    "contrast": 0.2,                   # Contrast adjustment factor
-    "brightness": 0.2,                 # Brightness adjustment factor
+
+# Model Architecture Settings
+PROTEON = {
+    "input_shape": SETUP['img_size'] + (3,),
+    "nick_name": "proteon",
+    "dropout": 0.3,
+    "shared_layer": 512,
+    "family_hidden": 512,
+    "genus_hidden": 512,
+    "species_hidden": 512,
+    "attention_neurons": 512,
 }
 
-# Model Configuration
-MODEL_SETTINGS = {
-    "base_model": "ResNet50V2",        # Base model to use for feature extraction
-    "base_model_short": "rn50v2",      # Short name for model logging and saving
-    "weights": "imagenet",             # Pre-trained weights (e.g., 'imagenet')
-    "trainable": False,                # Initial trainability of the base model
-    "dropout": 0.3,                    # Dropout rate for regularization
-    "shared_layer": 512,               # Neurons in the shared dense layer
-    "family_hidden": 512,              # Neurons in the family-level dense layer
-    "genus_hidden": 512,               # Neurons in the genus-level dense layer
-    "species_hidden": 512,             # Neurons in the species-level dense layer
-    "attention_neurons": 512,          # Neurons in the attention layer
-    "early_stopping_patience": 10,     # Patience for early stopping
-    "lr_factor": 0.5,                  # Learning rate factor
-    "lr_patience": 5,                  # Patience for learning rate reduction
-    "lr_min": 1e-6,                    # Minimum learning rate
 
-    # Training parameters
-    "learning_rate": 1e-4,             # Initial learning rate
-    "epochs": 20,                      # Number of epochs for initial training
-    "ftun_last_layers": 70,            # Number of last layers to unfreeze in fine-tuning
-    "ftun_learning_rate": 1e-5,        # Learning rate for fine-tuning
-    "ftun_epochs": 10,                 # Number of epochs for fine-tuning
-    "loss_weights": {"family": 1.0, "genus": 0.8, "species": 0.6},
-    "metrics": ["accuracy", "AUC", "Precision", "Recall"],
+PHORCYS = {
+    "nick_name": "phorcys",
+    "dropout": 0.3,
+    "shared_layer": 512,
+    "family_hidden": 512,
+    "genus_hidden": 512,
+    "species_hidden": 512,
 }
 
 
