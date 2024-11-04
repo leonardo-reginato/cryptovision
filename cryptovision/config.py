@@ -28,7 +28,7 @@ PROJ_TASK = "HACPL Model Training"
 
 # Parameters
 PARAMS = {
-    "run_sufix": "Simple",                 # Suffix for run name
+    "run_sufix": "Proteon 299",            # Suffix for run name
     "img_size": (299, 299),                # Image dimensions (height, width)
     "batch_size": 64,                      # Batch size for training and validation
     "val_size": 0.15,                      # Validation dataset proportion
@@ -54,8 +54,10 @@ PARAMS = {
         "trainable": False,                # Initial trainability of the base model
         "dropout": 0.3,                    # Dropout rate for regularization
         "shared_layer": 512,               # Neurons in the shared dense layer
-        "genus_hidden": 256,               # Neurons in the genus-level dense layer
-        "species_hidden": 128,             # Neurons in the species-level dense layer
+        "family_hidden": 512,              # Neurons in the family-level dense layer
+        "genus_hidden": 512,               # Neurons in the genus-level dense layer
+        "species_hidden": 512,             # Neurons in the species-level dense layer
+        "attention_neurons": 512,          # Neurons in the attention layer
         "early_stopping_patience": 10,     # Patience for early stopping
         "lr_factor": 0.5,                  # Learning rate factor
         "lr_patience": 5,                  # Patience for learning rate reduction

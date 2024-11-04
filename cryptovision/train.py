@@ -92,10 +92,10 @@ def main(
             se_ratio=16,
             shared_layer_neurons=PARAMS["model"]["shared_layer"],
             shared_layer_dropout=PARAMS["model"]["dropout"],
-            family_transform_neurons=PARAMS["model"]["family_transform"],
-            genus_transform_neurons=PARAMS["model"]["genus_transform"],
-            species_transform_neurons=PARAMS["model"]["species_transform"],
-            attention_neurons=PARAMS["model"]["family_attention"],
+            family_transform_neurons=PARAMS["model"]["family_hidden"],
+            genus_transform_neurons=PARAMS["model"]["genus_hidden"],
+            species_transform_neurons=PARAMS["model"]["species_hidden"],
+            attention_neurons=PARAMS["model"]["attention_neurons"],
             augmentation_layer=data_augmentation
         )
 
