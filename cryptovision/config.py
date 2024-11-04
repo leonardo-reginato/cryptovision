@@ -28,7 +28,7 @@ PROJ_TASK = "HACPL Model Training"
 
 # Settings
 SETTINGS = {
-    "run_sufix": "Proteon 299",
+    "run_sufix": "Proteon_299",
     "seed": 42,
     "verbose": 1,
     "img_size": (299, 299),
@@ -73,6 +73,7 @@ MODEL_SETTINGS = {
     "ftun_learning_rate": 1e-5,        # Learning rate for fine-tuning
     "ftun_epochs": 10,                 # Number of epochs for fine-tuning
     "loss_weights": {"family": 1.0, "genus": 0.8, "species": 0.6},
+    "metrics": ["accuracy", "AUC", "Precision", "Recall"],
 }
 
 
