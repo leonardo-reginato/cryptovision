@@ -167,7 +167,11 @@ def main(
 
         # Model Saving
         model_name = (
-            f"{SETUP['sufix']}_{SETUP['arch_type']}_{SETUP['base_model_nickname']}_{SETUP['version']}"
+            f"{SETUP['sufix']}_"
+            f"{SETUP['arch_type']}_"
+            f"{SETUP['base_model_nickname']}_"
+            f"{SETUP['version']}"
+            f"{datetime.now().strftime('%Y%m%d%H%M')}"
         )
         model.save(f"models/{model_name}.keras")
 

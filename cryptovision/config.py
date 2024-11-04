@@ -72,7 +72,7 @@ SETUP = {
     },
     
     # Mode Training Setup
-    "epochs": 2,
+    "epochs": 20,
     "monitor": "val_loss",
     "early_stopping": 10,
     "restore_best_weights": True,
@@ -83,7 +83,7 @@ SETUP = {
     # Fine-tuning Setup
     "ftun_last_layers": 70,
     "ftun_learning_rate": 1e-5,
-    "ftun_epochs": 2,  
+    "ftun_epochs": 10,  
 }
 
 
