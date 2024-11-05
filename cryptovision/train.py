@@ -89,18 +89,16 @@ def main(
         )
 
         # Model Creation
-        model = proteon(
-            input_shape=PROTEON["input_shape"],
+        model = phorcys(
+            input_shape=PHORCYS["input_shape"],
             n_families=len(family_labels),
             n_genera=len(genus_labels),
             n_species=len(species_labels),
-            shared_layer_neurons=PROTEON["shared_layer"],
-            shared_layer_dropout=PROTEON["dropout"],
-            family_transform_neurons=PROTEON["family_hidden"],
-            genus_transform_neurons=PROTEON["genus_hidden"],
-            species_transform_neurons=PROTEON["species_hidden"],
-            attention_neurons=PROTEON["attention_neurons"],
-            augmentation_layer=data_augmentation
+            augmentation_layer=data_augmentation,
+            shared_layer_neurons=PHORCYS["shared_layer"],
+            shared_layer_dropout=PHORCYS["dropout"],
+            genus_hidden_neurons=PHORCYS["genus_hidden"],
+            specie_hidden_neurons=PHORCYS["species_hidden"],
         )
 
         # Model Compilation

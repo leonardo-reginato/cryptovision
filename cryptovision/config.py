@@ -35,7 +35,7 @@ SETUP = {
     "verbose": 2,
     'batch_size': 64,
     "img_size": (299, 299),
-    "sufix": "proteon",
+    "sufix": "phorcys",
     "arch_type": "hacpl",
     "base_model_nickname": "rn50v2",
     "version": f"v{datetime.now().strftime('%y%m%d%H%M')}",
@@ -103,12 +103,13 @@ PROTEON = {
 
 
 PHORCYS = {
+    "input_shape": SETUP['img_size'] + (3,),
     "nick_name": "phorcys",
     "dropout": 0.3,
     "shared_layer": 512,
-    "family_hidden": 512,
-    "genus_hidden": 512,
-    "species_hidden": 512,
+    "family_hidden": 256,
+    "genus_hidden": 128,
+    "species_hidden": 128,
 }
 
 
