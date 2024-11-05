@@ -102,6 +102,9 @@ def main(
             attention=PHORCYS["attention"],
         )
 
+        # Model Summary
+        model.summary()
+        
         # Model Compilation
         model.compile(                                                                                                                                  
             optimizer=tf.keras.optimizers.Adam(learning_rate=SETUP["learning_rate"]),

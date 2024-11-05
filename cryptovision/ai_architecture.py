@@ -203,10 +203,7 @@ def phorcys(
     if attention:
         shared_layer_reshaped = Reshape((1, shared_layer_neurons))(shared_layer)
         if attention == "mha":
-            attention_output = MultiHeadAttention(
-                num_heads=num_heads, 
-                key_dim=shared_layer_neurons
-            )(shared_layer_reshaped, shared_layer_reshaped)
+            attention_output = MultiHeadAttention(num_heads=num_heads, key_dim=shared_layer_neurons)(shared_layer_reshaped, shared_layer_reshaped)
         else:
             attention_output = Attention()([shared_layer_reshaped, shared_layer_reshaped])
         attention_output = Reshape((shared_layer_neurons,))(attention_output)  # Reshape back to 2D
