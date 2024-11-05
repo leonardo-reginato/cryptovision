@@ -52,7 +52,7 @@ def main(
     with wandb.init(
         project=PROJ_NAME,
         name = f"{SETUP['sufix']}",
-        config={**SETUP,**PROTEON,},
+        config={**SETUP,**PHORCYS,},
     ) as run:
         
         # Dataset Setup
