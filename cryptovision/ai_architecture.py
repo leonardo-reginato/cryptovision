@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import ( # type: ignore
     Dense, GlobalAveragePooling2D, Dropout,
     BatchNormalization, Activation, Multiply,
-    Add, Concatenate, Input, Reshape, Layer
+    Add, Concatenate, Input, Reshape, Layer, Attention,
 )
 from tensorflow.keras import backend as K                                                       # type: ignore
 from tensorflow.keras.models import Model                                                       # type: ignore
@@ -169,7 +169,8 @@ def proteon(
 def phorcys(
     n_families, 
     n_genera, 
-    n_species, 
+    n_species,
+    attention=False, 
     input_shape=(224,224,3), 
     base_weights="imagenet", 
     base_trainable=False, 
@@ -195,6 +196,14 @@ def phorcys(
     shared_layer = tf.keras.layers.Dense(shared_layer_neurons, activation=None, name='shared_layer')(x)
     shared_layer = BatchNormalization()(shared_layer)
     shared_layer = Activation('relu')(shared_layer)
+    
+    # Attention Layer
+    if attention:
+        shared_layer_reshaped = Reshape((1, shared_layer_neurons))(shared_layer)
+        attention_output = Attention()([shared_layer_reshaped, shared_layer_reshaped])
+        attention_output = Reshape((shared_layer_neurons,))(attention_output)  # Reshape back to 2D
+        shared_layer = Add()([shared_layer, attention_output])  # Residual connection
+    
     shared_layer = Dropout(shared_layer_dropout)(shared_layer)
 
     # Define family output

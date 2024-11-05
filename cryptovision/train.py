@@ -99,6 +99,7 @@ def main(
             shared_layer_dropout=PHORCYS["dropout"],
             genus_hidden_neurons=PHORCYS["genus_hidden"],
             specie_hidden_neurons=PHORCYS["species_hidden"],
+            attention=PHORCYS["attention"],
         )
 
         # Model Compilation
