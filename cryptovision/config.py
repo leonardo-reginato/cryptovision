@@ -35,7 +35,7 @@ SETUP = {
     "verbose": 2,
     'batch_size': 64,
     "img_size": (299, 299),
-    "sufix": "phorcys_med_att",
+    "sufix": "phorcys_large",
     "arch_type": "hacpl",
     "base_model_nickname": "rn50v2",
     "version": f"v{datetime.now().strftime('%y%m%d%H%M')}",
@@ -106,10 +106,10 @@ PHORCYS = {
     "input_shape": SETUP['img_size'] + (3,),
     "nick_name": "phorcys",
     "dropout": 0.3,
-    "shared_layer": 512,
-    "genus_hidden": 256,
-    "species_hidden": 256,
-    "attention": True
+    "shared_layer": 1024,
+    "genus_hidden": 512,
+    "species_hidden": 512,
+    "attention": False
 }
 
 
