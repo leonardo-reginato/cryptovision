@@ -3,6 +3,7 @@ from tensorflow.keras.layers import ( # type: ignore
     Dense, GlobalAveragePooling2D, Dropout,
     BatchNormalization, Activation, Multiply,
     Add, Concatenate, Input, Reshape, Layer, Attention,
+    MultiHeadAttention
 )
 from tensorflow.keras import backend as K                                                       # type: ignore
 from tensorflow.keras.models import Model                                                       # type: ignore
@@ -179,6 +180,7 @@ def phorcys(
     shared_layer_dropout=0.3,
     genus_hidden_neurons=512,
     specie_hidden_neurons=512,
+    num_heads=4,
 ):
     
     # Base Model
@@ -200,7 +202,13 @@ def phorcys(
     # Attention Layer
     if attention:
         shared_layer_reshaped = Reshape((1, shared_layer_neurons))(shared_layer)
-        attention_output = Attention()([shared_layer_reshaped, shared_layer_reshaped])
+        if attention == "mha":
+            attention_output = MultiHeadAttention(
+                num_heads=num_heads, 
+                key_dim=shared_layer_neurons
+            )(shared_layer_reshaped, shared_layer_reshaped)
+        else:
+            attention_output = Attention()([shared_layer_reshaped, shared_layer_reshaped])
         attention_output = Reshape((shared_layer_neurons,))(attention_output)  # Reshape back to 2D
         shared_layer = Add()([shared_layer, attention_output])  # Residual connection
     
@@ -266,5 +274,4 @@ def combined_hierarchical_loss(y_true_family, y_pred_family, y_true_genus, y_pre
     
     # Combined loss with hierarchy penalty
     return family_loss + genus_loss + species_loss + 0.1 * hierarchy_loss  # Adjust weighting as needed
-
 
