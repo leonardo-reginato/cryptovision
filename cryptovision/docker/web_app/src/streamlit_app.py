@@ -18,6 +18,9 @@ cv_model = tf.keras.models.load_model(settings['model_path'])
 def predict_image(image, model, family_labels, genus_labels, species_labels, image_size=(299, 299), top_k=5):
     """ Predict the top-k family, genus, and species from an image using a trained model. """
     
+    # Convert image to RGB to ensure it has 3 channels
+    image = image.convert("RGB")
+    
     # Preprocess the image
     img = image.resize(image_size)
     img_array = np.array(img)
@@ -51,21 +54,16 @@ def create_labels_from_path(path):
 family_labels, genus_labels, species_labels = create_labels_from_path(settings['labels_path'])
 
 # Streamlit app layout and configuration
-st.set_page_config(page_title="CryptoVision", page_icon="🐟")
+st.set_page_config(page_title="CryptoVision", page_icon="🐟", layout="centered")
 
-# App logo and title
-logo_path = "/CryptoVision/images/logo_brandllab_v2.png"
-if os.path.exists(logo_path):
-    logo = Image.open(logo_path)
-    col1, col2, col3 = st.columns([1, 1, 1])
-    col2.image(logo, use_column_width=False, width=200)
-
+# App title and logo
+#st.image("/CryptoVision/images/logo_brandllab_v2.png", width=200)
 st.title("CryptoVision Image Classifier 🐟🔍")
+
 st.markdown(
     """
     **CryptoVision** is a deep learning model designed to classify fish species from images. 
     Upload an image of a fish, click "Classify," and the model will predict its family, genus, and species. 
-    Let's explore the underwater world together! 🌊🐠
     """
 )
 
@@ -80,54 +78,95 @@ def color_confidence(confidence):
     else:
         return "red"
 
-# Image uploader for user to provide an image
+# Image uploader
 uploaded_image = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
-# Button to trigger classification
+# Display the uploaded image preview and classify button only after image upload
 if uploaded_image:
-    st.image(uploaded_image, caption="Uploaded Image", use_column_width=True)
+    st.image(uploaded_image, caption="Uploaded Image Preview", use_column_width=True)
     
-    if st.button("Classify"):
-        # Perform the prediction
-        img = Image.open(uploaded_image)
-        top_k_family, top_k_genus, top_k_species = predict_image(img, cv_model, family_labels, genus_labels, species_labels, image_size=settings['img_size'])
+    # Centralize the "Classify" button
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        classify_button = st.button("Classify", use_container_width=True)
 
-        # Display only the top-1 prediction for each level
-        st.subheader("Prediction Results")
+    # Perform prediction and display results if the "Classify" button is clicked
+    if classify_button:
+        img = Image.open(uploaded_image)
         
-        # Display top-1 Family Prediction
+        # Perform the prediction
+        top_k_family, top_k_genus, top_k_species = predict_image(
+            img, cv_model, family_labels, genus_labels, species_labels, image_size=settings['img_size']
+        )
+
+        # Display only the top-1 prediction for each level with icons and color-coded confidence
+        st.subheader("Prediction Results")
+
+        # Display top-1 Family Prediction with icon and confidence check
         family, family_confidence = top_k_family[0]
         family_confidence_percentage = int(family_confidence * 100)
         family_color = color_confidence(family_confidence)
         
-        st.write(f"**Family:** *{family}*")
-        progress_bar = st.progress(family_confidence_percentage)
-        st.markdown(f"<span style='color:{family_color}; font-size: 16px;'>{family_confidence_percentage}%</span>", unsafe_allow_html=True)
-
-        # Display top-1 Genus Prediction
+        if family_confidence >= 0.3:
+            st.markdown(
+                f"<div style='font-size:20px;'><b>🧬 Family:</b> <i>{family}</i> "
+                f"<span style='color:{family_color};'>{family_confidence_percentage}%</span></div>",
+                unsafe_allow_html=True
+            )
+            st.progress(family_confidence_percentage)
+        else:
+            st.warning("The model was not able to confidently predict the family.")
+            
+        # Display top-1 Genus Prediction with icon and confidence check
         genus, genus_confidence = top_k_genus[0]
         genus_confidence_percentage = int(genus_confidence * 100)
         genus_color = color_confidence(genus_confidence)
         
-        st.write(f"**Genus:** *{genus}*")
-        progress_bar = st.progress(genus_confidence_percentage)
-        st.markdown(f"<span style='color:{genus_color}; font-size: 16px;'>{genus_confidence_percentage}%</span>", unsafe_allow_html=True)
+        if genus_confidence >= 0.3:
+            st.markdown(
+                f"<div style='font-size:20px;'><b>🌱 Genus:</b> <i>{genus}</i> "
+                f"<span style='color:{genus_color};'>{genus_confidence_percentage}%</span></div>",
+                unsafe_allow_html=True
+            )
+            st.progress(genus_confidence_percentage)
+        else:
+            st.warning("The model was not able to confidently predict the genus.")
 
-        # Display top-1 Species Prediction
+        # Display top-1 Species Prediction with icon and confidence check
         species, species_confidence = top_k_species[0]
         species_confidence_percentage = int(species_confidence * 100)
         species_color = color_confidence(species_confidence)
         
-        st.write(f"**Species:** *{species}*")
-        progress_bar = st.progress(species_confidence_percentage)
-        st.markdown(f"<span style='color:{species_color}; font-size: 16px;'>{species_confidence_percentage}%</span>", unsafe_allow_html=True)
+        if species_confidence >= 0.3:
+            st.markdown(
+                f"<div style='font-size:20px;'><b>🐟 Species:</b> <i>{species}</i> "
+                f"<span style='color:{species_color};'>{species_confidence_percentage}%</span></div>",
+                unsafe_allow_html=True
+            )
+            st.progress(species_confidence_percentage)
+        else:
+            st.warning("The model was not able to confidently predict the species.")
 
-    else:
-        st.info("Click 'Classify' to see the predictions.")
+        # Toggle area for top-5 predictions
+        with st.expander("See top 5 predictions"):
+            st.subheader("Top-5 Predictions")
+            
+            # Display top-5 tables with headers
+            def format_confidence(predictions):
+                return {"Label": [label for label, _ in predictions], "Confidence": [f"{confidence * 100:.2f}%" for _, confidence in predictions]}
 
-# Optional: Add feedback section
-st.subheader("Feedback")
-st.write("Was the prediction correct in your opinion?")
-user_feedback = st.radio("", ["Yes", "No"], index=0, key="user_feedback")
-if st.button("Submit Feedback"):
-    st.success("Thank you for your feedback!")
+            st.write("**Family Predictions:**")
+            st.table(format_confidence(top_k_family))
+            
+            st.write("**Genus Predictions:**")
+            st.table(format_confidence(top_k_genus))
+
+            st.write("**Species Predictions:**")
+            st.table(format_confidence(top_k_species))
+
+        # Feedback section shown after prediction
+        st.subheader("Feedback")
+        st.write("Was the prediction correct in your opinion?")
+        user_feedback = st.radio("", ["Yes", "No"], index=0, key="user_feedback")
+        if st.button("Submit Feedback"):
+            st.success("Thank you for your feedback!")
