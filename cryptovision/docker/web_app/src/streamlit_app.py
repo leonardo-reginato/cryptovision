@@ -3,13 +3,19 @@ import streamlit as st
 import tensorflow as tf
 import numpy as np
 from PIL import Image
+import hashlib
+from datetime import datetime
 
 # Application Settings
 settings = {
     "model_path": '/Users/leonardo/Documents/Projects/cryptovision/models/phorcys_large_hacpl_rn50v2_v2411051344.keras',
     "labels_path": "/Users/leonardo/Documents/Projects/cryptovision/data/processed/cv_images_dataset",
     "img_size": (299, 299),
+    "saved_images_folder": "/Users/leonardo/Documents/Projects/cryptovision/saved_images"
 }
+
+# Ensure the saved images folder exists
+os.makedirs(settings['saved_images_folder'], exist_ok=True)
 
 # Load the model
 cv_model = tf.keras.models.load_model(settings['model_path'])
@@ -53,6 +59,13 @@ def create_labels_from_path(path):
 # Load labels from the dataset path
 family_labels, genus_labels, species_labels = create_labels_from_path(settings['labels_path'])
 
+# Function to save image with a unique hash ID
+def save_image_with_hash(image, folder_path):
+    img_hash = hashlib.sha256(image.tobytes()).hexdigest()[:8]  # Shorten hash to 8 characters
+    img_save_path = os.path.join(folder_path, f"{img_hash}.png")
+    image.save(img_save_path)
+    return img_save_path
+
 # Streamlit app layout and configuration
 st.set_page_config(page_title="CryptoVision", page_icon="🐟", layout="centered")
 
@@ -66,6 +79,9 @@ st.markdown(
     Upload an image of a fish, click "Classify," and the model will predict its family, genus, and species. 
     """
 )
+
+# Notify user that their image will be saved for research purposes
+st.info("For research and enhancement purposes, your image will be saved in our secure database.")
 
 # Helper function for color-coding confidence
 def color_confidence(confidence):
@@ -83,7 +99,11 @@ uploaded_image = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"]
 
 # Display the uploaded image preview and classify button only after image upload
 if uploaded_image:
-    st.image(uploaded_image, caption="Uploaded Image Preview", use_column_width=True)
+    img = Image.open(uploaded_image)
+    st.image(img, caption="Uploaded Image Preview", use_column_width=True)
+    
+    # Save the uploaded image with a unique hash ID
+    saved_image_path = save_image_with_hash(img, settings['saved_images_folder'])
     
     # Centralize the "Classify" button
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -92,7 +112,6 @@ if uploaded_image:
 
     # Perform prediction and display results if the "Classify" button is clicked
     if classify_button:
-        img = Image.open(uploaded_image)
         
         # Perform the prediction
         top_k_family, top_k_genus, top_k_species = predict_image(
