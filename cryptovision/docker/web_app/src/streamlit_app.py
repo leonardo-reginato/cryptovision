@@ -15,6 +15,7 @@ settings = {
     "saved_images_folder": "/Users/leonardo/Documents/Projects/cryptovision/saved_images",
     "log_file": "/Users/leonardo/Documents/Projects/cryptovision/predictions_log.csv",
     "min_confidence": 0.4,
+    "image_header": "/Users/leonardo/Documents/Projects/cryptovision/cryptovision/docker/web_app/images/fish_colage_v2.png"
 }
 
 # Ensure directories and log file exist
@@ -89,7 +90,8 @@ def color_confidence(confidence):
 family_labels, genus_labels, species_labels = create_labels_from_path(settings['labels_path'])
 
 # Streamlit layout
-st.set_page_config(page_title="CryptoVision", page_icon="🐟", layout="centered")
+st.set_page_config(page_title="CryptoVision", page_icon="🐟", layout="wide")
+st.image(settings['image_header'], use_column_width=True)
 st.title("CryptoVision Image Classifier 🐟🔍")
 st.markdown(
     """
