@@ -9,9 +9,9 @@ from datetime import datetime
 
 # Application Settings
 settings = {
-    "model_path": '/Users/leonardo/Documents/Projects/cryptovision/models/phorcys_large_hacpl_rn50v2_v2411051344.keras',
+    "model_path": '/Users/leonardo/Documents/Projects/cryptovision/models/phorcys_simple_hacpl_384_rn50v2_v2411131337.keras',
     "labels_path": "/Users/leonardo/Documents/Projects/cryptovision/data/processed/cv_images_dataset",
-    "img_size": (299, 299),
+    "img_size": (384, 384),
     "saved_images_folder": "/Users/leonardo/Documents/Projects/cryptovision/saved_images",
     "log_file": "/Users/leonardo/Documents/Projects/cryptovision/predictions_log.csv",
     "min_confidence": 0.4,
