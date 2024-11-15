@@ -34,8 +34,8 @@ SETUP = {
     "seed": 42,
     "verbose": 2,
     'batch_size': 64,
-    "img_size": (299, 299),
-    "sufix": "phorcys_lbl_smooth",
+    "img_size": (384, 384),
+    "sufix": "phorcys_medium_384",
     "arch_type": "hacpl",
     "base_model_nickname": "rn50v2",
     "version": f"v{datetime.now().strftime('%y%m%d%H%M')}",
@@ -58,9 +58,9 @@ SETUP = {
     # Compile Setup
     "learning_rate": 1e-4,
     "loss": {
-        "family": tf.keras.losses.CategoricalFocalCrossentropy(label_smoothing=0.1),
-        "genus": tf.keras.losses.CategoricalFocalCrossentropy(label_smoothing=0.1),
-        "species": tf.keras.losses.CategoricalFocalCrossentropy(label_smoothing=0.1),
+        "family": "categorical_focal_crossentropy",
+        "genus": "categorical_focal_crossentropy",
+        "species": "categorical_focal_crossentropy",
     },
     "metrics": {
         "family": ["accuracy", "AUC", "Precision", "Recall"],
@@ -74,7 +74,7 @@ SETUP = {
     },
     
     # Mode Training Setup
-    "epochs": 20,
+    "epochs": 10,
     "monitor": "val_loss",
     "early_stopping": 10,
     "restore_best_weights": True,
@@ -85,7 +85,7 @@ SETUP = {
     # Fine-tuning Setup
     "ftun_last_layers": 70,
     "ftun_learning_rate": 1e-5,
-    "ftun_epochs": 20,  
+    "ftun_epochs": 10,  
 }
 
 
