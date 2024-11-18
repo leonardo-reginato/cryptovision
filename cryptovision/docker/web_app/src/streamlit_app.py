@@ -147,7 +147,7 @@ if uploaded_image:
 
         # Display family prediction if confidence is >= 40%
         if family_conf >= settings['min_confidence']:
-            display_prediction("🧬 Family", family, family_conf)
+            display_prediction("👪 Family", family, family_conf)
         else:
             st.warning("The model could not confidently predict the family.")
 
