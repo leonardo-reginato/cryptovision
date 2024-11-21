@@ -67,7 +67,7 @@ def predict_image(image, model, family_labels, genus_labels, species_labels, img
 st.title("Fish Species Classifier 🐟🔍")
 st.markdown(
     """
-    Upload a folder of fish images, and this app will predict the family, genus, 
+    Upload a set of fish images, and this app will predict the family, genus, 
     and species for each image. Metrics will also be displayed based on the predictions.
     """
 )
