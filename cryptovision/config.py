@@ -35,7 +35,7 @@ SETUP = {
     "verbose": 2,
     'batch_size': 64,
     "img_size": (384, 384),
-    "sufix": "phorcys_medium_384",
+    "sufix": "phorcys_v09",
     "arch_type": "hacpl",
     "base_model_nickname": "rn50v2",
     "version": f"v{datetime.now().strftime('%y%m%d%H%M')}",
@@ -69,8 +69,8 @@ SETUP = {
     },
     "loss_weights": {
         "family": 1.0,
-        "genus": 0.8,
-        "species": 0.6,
+        "genus": 1.5,
+        "species": 2.0,
     },
     
     # Mode Training Setup
@@ -83,9 +83,9 @@ SETUP = {
     "lr_min": 1e-6,
     
     # Fine-tuning Setup
-    "ftun_last_layers": 70,
+    "ftun_last_layers": 90,
     "ftun_learning_rate": 1e-5,
-    "ftun_epochs": 10,  
+    "ftun_epochs": 15,  
 }
 
 
@@ -108,7 +108,7 @@ PHORCYS = {
     "dropout": 0.3,
     "shared_layer": 512,
     "genus_hidden": 256,
-    "species_hidden": 256,
+    "species_hidden": 128,
     "attention": False
 }
 
