@@ -3,7 +3,7 @@ from tensorflow.keras.layers import ( # type: ignore
     Dense, GlobalAveragePooling2D, Dropout,
     BatchNormalization, Activation, Multiply,
     Add, Concatenate, Input, Reshape, Layer, Attention,
-    MultiHeadAttention
+    MultiHeadAttention, Conv2D, MaxPooling2D, Flatten
 )
 from tensorflow.keras import backend as K                                                       # type: ignore
 from tensorflow.keras.models import Model                                                       # type: ignore
@@ -179,7 +179,7 @@ def phorcys(
     shared_layer_neurons=512,
     shared_layer_dropout=0.3,
     genus_hidden_neurons=512,
-    specie_hidden_neurons=512,
+    species_hidden_neurons=512,
     num_heads=4,
 ):
     
@@ -225,7 +225,7 @@ def phorcys(
     genus_features = tf.keras.layers.Concatenate()([shared_layer, family_output, genus_output])
 
     # Define species output, using both family and genus features as additional input
-    species_hidden = tf.keras.layers.Dense(specie_hidden_neurons, activation='relu')(genus_features)
+    species_hidden = tf.keras.layers.Dense(species_hidden_neurons, activation='relu')(genus_features)
     species_output = tf.keras.layers.Dense(n_species, activation='softmax', name='species')(species_hidden)
 
     # Create the hierarchical model
@@ -233,6 +233,77 @@ def phorcys(
     
     return model
 
+
+# Simple Model
+def phorcys_conv(
+    n_families, 
+    n_genera, 
+    n_species,
+    attention=False, 
+    input_shape=(224,224,3), 
+    base_weights="imagenet", 
+    base_trainable=False, 
+    augmentation_layer=None,
+    shared_layer_neurons=512,
+    shared_layer_dropout=0.3,
+    genus_hidden_neurons=512,
+    species_hidden_neurons=512,
+    num_heads=4,
+):
+    
+    # Base Model
+    base_model = ResNet50V2(include_top=False, weights=base_weights, input_shape=input_shape)
+    base_model.trainable = base_trainable
+
+    # Input and data augmentation layers
+    inputs = Input(shape=input_shape)
+    x = augmentation_layer(inputs) if augmentation_layer else inputs  
+    x = resnet_preprocess(x)  
+    x = base_model(x, training=False)
+    rn_features_extracted = x  # Retain spatial features from ResNet
+    
+    # Global pooling for shared feature extraction
+    shared_features = GlobalAveragePooling2D()(x)
+    shared_features = Dense(shared_layer_neurons, activation=None, name='shared_layer')(shared_features)
+    shared_features = BatchNormalization()(shared_features)
+    shared_features = Activation('relu')(shared_features)
+    shared_features = Dropout(shared_layer_dropout)(shared_features)
+    
+    # Attention Layer
+    if attention:
+        shared_features_reshaped = Reshape((1, shared_layer_neurons))(shared_features)
+        attention_output = Attention()([shared_features_reshaped, shared_features_reshaped])
+        attention_output = Reshape((shared_layer_neurons,))(attention_output) 
+        shared_features = Add()([shared_features, attention_output])
+    
+
+    # Define family output
+    family_conv = Conv2D(64, (3, 3), activation='relu', padding='same')(rn_features_extracted)
+    family_pool = MaxPooling2D((2, 2))(family_conv)
+    family_flatten = Flatten()(family_pool)
+    family_features = Concatenate()([shared_features, family_flatten])
+    family_output = Dense(n_families, activation='softmax', name='family')(family_features)
+
+    # Genus output
+    genus_conv = Conv2D(128, (3, 3), activation='relu', padding='same')(rn_features_extracted)
+    genus_pool = MaxPooling2D((2, 2))(genus_conv)
+    genus_flatten = Flatten()(genus_pool)
+    genus_features = Concatenate()([shared_features, family_output, genus_flatten])
+    genus_hidden = Dense(genus_hidden_neurons, activation='relu')(genus_features)
+    genus_output = Dense(n_genera, activation='softmax', name='genus')(genus_hidden)
+
+    # Species output
+    species_conv = Conv2D(256, (3, 3), activation='relu', padding='same')(rn_features_extracted)
+    species_pool = MaxPooling2D((2, 2))(species_conv)
+    species_flatten = Flatten()(species_pool)
+    species_features = Concatenate()([shared_features, family_output, genus_output, species_flatten])
+    species_hidden = Dense(species_hidden_neurons, activation='relu')(species_features)
+    species_output = Dense(n_species, activation='softmax', name='species')(species_hidden)
+
+    # Create the hierarchical model
+    model = tf.keras.Model(inputs, [family_output, genus_output, species_output])
+    
+    return model
 
 # Focal Loss function
 def focal_loss(gamma=2.0, alpha=0.25):

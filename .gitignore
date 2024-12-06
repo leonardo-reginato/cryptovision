@@ -2,6 +2,7 @@
 /data/
 /wandb/
 /models/
+/notebooks/drafts
 
 # Mac OS-specific storage files
 .DS_Store
