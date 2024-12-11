@@ -12,7 +12,7 @@ from cryptovision.tools import (
     tf_dataset_from_pandas,
 )
 from cryptovision.ai_architecture import (
-    proteon, augmentation_layer, phorcys, phorcys_conv)
+    proteon, augmentation_layer, phorcys, phorcys_conv, stable_phorcys_conv)
 
 # Initialize Typer app and set mixed precision for TensorFlow
 app = typer.Typer()
@@ -89,7 +89,7 @@ def main(
         )
 
         # Model Creation
-        model = phorcys_conv(
+        model = stable_phorcys_conv(
             input_shape=PHORCYS["input_shape"],
             n_families=len(family_labels),
             n_genera=len(genus_labels),
@@ -99,7 +99,7 @@ def main(
             shared_layer_dropout=PHORCYS["dropout"],
             genus_hidden_neurons=PHORCYS["genus_hidden"],
             species_hidden_neurons=PHORCYS["species_hidden"],
-            attention=PHORCYS["attention"],
+            #attention=PHORCYS["attention"],
         )
 
         # Model Summary

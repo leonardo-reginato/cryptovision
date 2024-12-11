@@ -35,7 +35,7 @@ SETUP = {
     "verbose": 2,
     'batch_size': 64,
     "img_size": (384, 384),
-    "sufix": "phorcys_conv_att_v01",
+    "sufix": "stable_phorcys_conv",
     "arch_type": "hacpl",
     "base_model_nickname": "rn50v2",
     "version": f"v{datetime.now().strftime('%y%m%d%H%M')}",
@@ -85,7 +85,7 @@ SETUP = {
     # Fine-tuning Setup
     "ftun_last_layers": 90,
     "ftun_learning_rate": 1e-5,
-    "ftun_epochs": 15,  
+    "ftun_epochs": 10,  
 }
 
 
@@ -106,9 +106,9 @@ PHORCYS = {
     "input_shape": SETUP['img_size'] + (3,),
     "nick_name": "phorcys_conv",
     "dropout": 0.3,
-    "shared_layer": 512,
+    "shared_layer": 128,
     "genus_hidden": 256,
-    "species_hidden": 128,
+    "species_hidden": 512,
     "attention": True
 }
 

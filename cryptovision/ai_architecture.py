@@ -10,8 +10,6 @@ from tensorflow.keras.models import Model                                       
 from tensorflow.keras.applications import ResNet50V2                                            # type: ignore
 from tensorflow.keras.applications.resnet_v2 import preprocess_input as resnet_preprocess       # type: ignore
 
-
-
 # Data Augmentation
 def augmentation_layer(
     flip="horizontal",
@@ -304,6 +302,77 @@ def phorcys_conv(
     model = tf.keras.Model(inputs, [family_output, genus_output, species_output])
     
     return model
+
+# Stable Convolutional Model
+def stable_phorcys_conv(
+    n_families, 
+    n_genera, 
+    n_species,
+    input_shape=(384,384,3), 
+    base_weights="imagenet", 
+    base_trainable=False, 
+    augmentation_layer=None,
+    shared_layer_neurons=512,
+    shared_layer_dropout=0.3,
+    genus_hidden_neurons=512,
+    species_hidden_neurons=512
+):
+    """
+    A stable, simplified version of a hierarchical classification model.
+    Concepts:
+    - Pretrained backbone (ResNet50V2) for robustness.
+    - GlobalAveragePooling2D to produce a stable shared feature vector.
+    - Minimal, single convolutional layers before each output head.
+    - BatchNormalization, Dropout, and a single Dense layer for shared features.
+    - Parallel predictions without attention or complex hierarchical logic.
+    
+    This provides a solid baseline that you can refine if needed.
+    """
+
+    # Base model
+    base_model = ResNet50V2(include_top=False, weights=base_weights, input_shape=input_shape)
+    base_model.trainable = base_trainable
+
+    # Input and optional augmentation
+    inputs = Input(shape=input_shape)
+    x = augmentation_layer(inputs) if augmentation_layer else inputs
+    x = resnet_preprocess(x)
+    x = base_model(x, training=False)
+
+    # Shared features: stable and simple
+    shared_features = GlobalAveragePooling2D()(x)
+    shared_features = Dense(shared_layer_neurons, activation=None, name='shared_layer')(shared_features)
+    shared_features = BatchNormalization()(shared_features)
+    shared_features = Activation('relu')(shared_features)
+    shared_features = Dropout(shared_layer_dropout)(shared_features)
+
+    # Family branch
+    family_conv = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    family_pool = MaxPooling2D((2, 2))(family_conv)
+    family_flatten = Flatten()(family_pool)
+    family_combined = Concatenate()([shared_features, family_flatten])
+    family_output = Dense(n_families, activation='softmax', name='family')(family_combined)
+
+    # Genus branch
+    genus_conv = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    genus_pool = MaxPooling2D((2, 2))(genus_conv)
+    genus_flatten = Flatten()(genus_pool)
+    genus_combined = Concatenate()([shared_features, genus_flatten])
+    genus_hidden = Dense(genus_hidden_neurons, activation='relu')(genus_combined)
+    genus_output = Dense(n_genera, activation='softmax', name='genus')(genus_hidden)
+
+    # Species branch
+    species_conv = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    species_pool = MaxPooling2D((2, 2))(species_conv)
+    species_flatten = Flatten()(species_pool)
+    species_combined = Concatenate()([shared_features, species_flatten])
+    species_hidden = Dense(species_hidden_neurons, activation='relu')(species_combined)
+    species_output = Dense(n_species, activation='softmax', name='species')(species_hidden)
+
+    # Create the hierarchical model with parallel outputs
+    model = Model(inputs, [family_output, genus_output, species_output])
+    return model
+
 
 # Focal Loss function
 def focal_loss(gamma=2.0, alpha=0.25):

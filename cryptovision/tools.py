@@ -4,6 +4,7 @@ import pandas as pd
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 def image_directory_to_pandas(image_path):
     """
@@ -151,7 +152,7 @@ def process_image_and_labels(image_path, family, genus, species, family_labels, 
     }
 
 
-def tf_dataset_from_pandas(df, batch_size=32, image_size=(224,224)):
+def tf_dataset_from_pandas(df, batch_size=32, image_size=(224,224), shuffle=True):
     """
     Build a TensorFlow dataset from a DataFrame containing image paths and taxonomic labels.
 
@@ -204,8 +205,10 @@ def tf_dataset_from_pandas(df, batch_size=32, image_size=(224,224)):
     image_label_ds = image_label_ds\
         .batch(batch_size)\
         .cache()\
-        .shuffle(buffer_size=len(df))\
         .prefetch(buffer_size=tf.data.AUTOTUNE)
+        
+    if shuffle:
+        image_label_ds = image_label_ds.shuffle(buffer_size=len(df))
 
     return (
         image_label_ds,
