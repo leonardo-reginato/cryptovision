@@ -5,6 +5,10 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+from tf_keras_vis.utils.model_modifiers import ReplaceToLinear
+from tf_keras_vis.utils.scores import CategoricalScore
+from tf_keras_vis.saliency import Saliency
+from tf_keras_vis.utils import normalize
 
 def image_directory_to_pandas(image_path):
     """
@@ -421,4 +425,230 @@ def analyze_taxonomic_misclassifications(
 
     return results
 
+
+class CryptoVisionAI:
+    def __init__(self, model_path, family_names, genus_names, species_names):
+        """
+        Initializes the CryptoVisionAI class.
+        
+        Parameters:
+            model (tf.keras.Model): The trained model for prediction.
+            family_names (list): List of family label names.
+            genus_names (list): List of genus label names.
+            species_names (list): List of species label names.
+        """
+        self.model = tf.keras.models.load_model(model_path)
+        self.family_names = family_names
+        self.genus_names = genus_names
+        self.species_names = species_names
+        self.target_size = self.model.input_shape[1:3]
+    
+    @property  
+    def image(self):
+        return tf.keras.preprocessing.image.load_img(self.image_path, target_size=self.target_size)    
+    
+    @property
+    def family_model(self):
+        if not hasattr(self, '_family_model'):
+            self._family_model = tf.keras.models.Model(
+                inputs=self.model.input,
+                outputs=self.model.get_layer('family').output
+            )
+        return self._family_model
+    
+    @property
+    def genus_model(self):
+        if not hasattr(self, '_genus_model'):
+            self._genus_model = tf.keras.models.Model(
+                inputs=self.model.input,
+                outputs=self.model.get_layer('genus').output
+            )
+        return self._genus_model
+    
+    @property
+    def species_model(self):
+        if not hasattr(self, '_species_model'):
+            self._species_model = tf.keras.models.Model(
+                inputs=self.model.input,
+                outputs=self.model.get_layer('species').output
+            )
+        return self._species_model
+    
+    @property
+    def image_array(self):
+        try:
+            image_array = tf.keras.preprocessing.image.img_to_array(self.image)
+            image_array = np.expand_dims(image_array, axis=0)
+            return image_array
+        except Exception as e:
+            print(f"Error processing image at {self.image_path}: {e}")
+            return None
+
+    def decoder(self, preds):
+        try:
+            family_pred = self.family_names[np.argmax(preds[0])] if preds[0] is not None else "Unknown"
+            genus_pred = self.genus_names[np.argmax(preds[1])] if preds[1] is not None else "Unknown"
+            species_pred = self.species_names[np.argmax(preds[2])] if preds[2] is not None else "Unknown"
+            return [family_pred, genus_pred, species_pred]
+        except IndexError:
+            return ["Unknown", "Unknown", "Unknown"]
+    
+    def complete_prediction(self, preds):
+        """
+        Predicts labels for a single image.
+
+        Parameters:
+            image (np.array): Preprocessed image.
+            return_probabilities (bool): Whether to return probabilities.
+
+        Returns:
+            list: Predicted labels.
+        """
+        
+        results = {
+            'family': {},
+            'genus': {},
+            'species': {},
+        }
+        
+        family_pred = np.argmax(preds[0])
+        genus_pred = np.argmax(preds[1])
+        species_pred = np.argmax(preds[2])
+        
+        family_label, genus_label, species_label = self.decoder(preds)
+        
+        # Return the predicted names
+        results['family']['name'] = family_label
+        results['genus']['name'] = genus_label
+        results['species']['name'] = species_label
+        
+        # Return the predicted labels
+        results['family']['label'] = family_pred
+        results['genus']['label'] = genus_pred
+        results['species']['label'] = species_pred
+        
+        # Return the predicted probabilities
+        results['family']['prob'] = preds[0].max()
+        results['genus']['prob'] = preds[1].max()
+        results['species']['prob'] = preds[2].max()
+        
+        return results
+
+    def predict_from_path(self, image_path, prediction_type='labels'):
+        """
+        Predicts labels from a list of image paths.
+        
+        Parameters:
+            image_paths (list): List of image paths.
+            batch_size (int): Size of batches for prediction.
+        
+        Returns:
+            list: Predictions for all images.
+        """
+        results = []
+        self.image_path = image_path
+        preds = self.model.predict(self.image_array, verbose=0)
+        if prediction_type == 'complete':
+            return self.complete_prediction(preds)
+        elif prediction_type == 'raw':
+            return preds
+        elif prediction_type == 'labels':
+            return self.decoder(preds)
+
+    def predict_from_dataframe(self, dataframe, reference_column, batch_size=64):
+        """
+        Predicts labels from a pandas DataFrame with image paths in batches, with progress tracking.
+        
+        Parameters:
+            dataframe (pd.DataFrame): DataFrame containing image paths and metadata.
+            reference_column (str): Column containing the image paths.
+            batch_size (int): Number of images to process per batch.
+        
+        Returns:
+            list: List of predictions for all images.
+        """
+        predictions = []
+        num_batches = (len(dataframe) + batch_size - 1) // batch_size  # Calculate the total number of batches
+
+        with tqdm(total=num_batches, desc="Predicting Batches") as pbar:
+            for i in range(0, len(dataframe), batch_size):
+                batch_df = dataframe.iloc[i:i + batch_size]
+                batch_images = np.vstack([self.image_path_to_array(row[reference_column]) for _, row in batch_df.iterrows()])
+                batch_preds = self.model.predict(batch_images, verbose=0)
+                decoded_batch = [
+                    self.decoder([batch_preds[0][i], batch_preds[1][i], batch_preds[2][i]]) 
+                    for i in range(len(batch_preds[0]))
+                ]
+                predictions.extend(decoded_batch)
+                pbar.update(1)
+        
+        return predictions
+
+    def predict_from_tf_dataset(self, tf_dataset):
+        """
+        Predicts labels from a TensorFlow dataset.
+
+        Parameters:
+            tf_dataset (tf.data.Dataset): Dataset containing images and labels.
+
+        Returns:
+            list: Decoded predictions for all images in the dataset.
+        """
+        predictions = []
+        for batch in tqdm(tf_dataset, desc="Predicting with Dataset"):
+            img_batch, _ = batch  # Assuming labels are the second element
+            preds = self.model.predict(img_batch, verbose=0)
+            
+            # Decode predictions for the batch
+            decoded_batch = [
+                self.decoder([preds[0][i], preds[1][i], preds[2][i]]) 
+                for i in range(len(preds[0]))
+            ]
+            predictions.extend(decoded_batch)
+            
+        return predictions
+    
+    def saliency_map(self, level, image_path, figure_size = (15, 8)):
+        
+        self.image_path = image_path
+        preds = self.model.predict(self.image_array, verbose=0)
+        preds = self.complete_prediction(preds)
+        class_index = preds[level]['label']
+        
+        if level == 'family':
+            model = self.family_model
+        elif level == 'genus':
+            model = self.genus_model
+        elif level == 'species':
+            model = self.species_model
+            
+        score = CategoricalScore([class_index])
+        saliency = Saliency(model, model_modifier=ReplaceToLinear(), clone=False)
+        saliency_map = saliency(score, self.image_array, smooth_samples=20, smooth_noise=0.2)
+        saliency_map = normalize(saliency_map)
+        
+        # Plot results
+        plt.figure(figsize=figure_size)
+        plt.suptitle(f"Predicted Class: {preds[level]['name']} - {preds[level]['prob']*100:.2f}%", fontsize=14)
+        
+        # Original Image
+        plt.subplot(1, 3, 1)
+        plt.title("Original")
+        plt.imshow(self.image)
+        plt.axis('off')
+        
+        # Saliency Map
+        plt.subplot(1, 3, 2)
+        plt.title("Saliency Map")
+        plt.imshow(saliency_map[0], cmap='jet')
+        plt.axis('off')
+        
+        # Saliency overlay
+        plt.subplot(1, 3, 3)
+        plt.title("Saliency Overlay")
+        plt.imshow(self.image)
+        plt.imshow(saliency_map[0], cmap='jet', alpha=0.5)  # Overlay saliency map with transparency
+        plt.axis('off')
+        
+        pass
 
