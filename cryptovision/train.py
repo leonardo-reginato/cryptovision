@@ -5,14 +5,16 @@ from pathlib import Path
 from loguru import logger
 from wandb.integration.keras import WandbMetricsLogger
 from cryptovision.config import (
-    PROCESSED_DATA_DIR, PROJ_NAME, SETUP, PROTEON, PHORCYS)
+    PROCESSED_DATA_DIR, PROJ_NAME, SETUP, PROTEON, PHORCYS, IND_MOM)
 from cryptovision.tools import (
     image_directory_to_pandas,
     split_image_dataframe,
     tf_dataset_from_pandas,
 )
 from cryptovision.ai_architecture import (
-    proteon, augmentation_layer, phorcys, phorcys_conv, stable_phorcys_conv)
+    proteon, augmentation_layer, phorcys, phorcys_conv, stable_phorcys_conv,
+    independent_multi_output_model
+)
 
 # Initialize Typer app and set mixed precision for TensorFlow
 app = typer.Typer()
@@ -89,17 +91,16 @@ def main(
         )
 
         # Model Creation
-        model = stable_phorcys_conv(
-            input_shape=PHORCYS["input_shape"],
+        model = independent_multi_output_model(
+            input_shape=IND_MOM["input_shape"],
             n_families=len(family_labels),
             n_genera=len(genus_labels),
             n_species=len(species_labels),
             augmentation_layer=data_augmentation,
-            shared_layer_neurons=PHORCYS["shared_layer"],
-            shared_layer_dropout=PHORCYS["dropout"],
-            genus_hidden_neurons=PHORCYS["genus_hidden"],
-            species_hidden_neurons=PHORCYS["species_hidden"],
-            #attention=PHORCYS["attention"],
+            dropout_rate=IND_MOM["dropout_rate"],
+            family_neurons=IND_MOM["family_neurons"],
+            genus_neurons=IND_MOM["genus_neurons"],
+            species_neurons=IND_MOM["species_neurons"],
         )
 
         # Model Summary

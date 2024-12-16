@@ -35,7 +35,7 @@ SETUP = {
     "verbose": 2,
     'batch_size': 64,
     "img_size": (384, 384),
-    "sufix": "stable_phorcys_conv",
+    "sufix": "ind_mo_model_v2",
     "arch_type": "hacpl",
     "base_model_nickname": "rn50v2",
     "version": f"v{datetime.now().strftime('%y%m%d%H%M')}",
@@ -110,6 +110,16 @@ PHORCYS = {
     "genus_hidden": 256,
     "species_hidden": 512,
     "attention": True
+}
+
+IND_MOM = {
+    "input_shape": SETUP['img_size'] + (3,),
+    "nick_name": "ind_mo_model",
+    "dropout_rate": 0.3,
+    "shared_layer_neurons": 512,
+    "family_neurons": 128,
+    "genus_neurons": 256,
+    "species_neurons": 512,
 }
 
 

@@ -81,6 +81,77 @@ def transformer_layer(neurons, activation='relu', dropout_rate=0.2):
     return layer
 
 
+def independent_multi_output_model(
+    input_shape=(384, 384, 3),
+    n_families=10,
+    n_genera=10,
+    n_species=10,
+    base_weights="imagenet",
+    base_trainable=False,
+    augmentation_layer=None,
+    shared_layer_neurons=512,
+    family_neurons=256,
+    genus_neurons=256,
+    species_neurons=256,
+    dropout_rate=0.3
+):
+    """
+    Creates a multi-output deep learning model where each output is independent,
+    with no shared layers between the outputs.
+
+    Args:
+        input_shape (tuple): Shape of the input image.
+        n_families (int): Number of family classes.
+        n_genera (int): Number of genus classes.
+        n_species (int): Number of species classes.
+        base_weights (str): Weights for the base model (e.g., "imagenet").
+        base_trainable (bool): Whether the base model is trainable.
+        augmentation_layer (Layer): Data augmentation layer to apply before the model.
+        family_neurons (int): Number of neurons in the dense layer for family prediction.
+        genus_neurons (int): Number of neurons in the dense layer for genus prediction.
+        species_neurons (int): Number of neurons in the dense layer for species prediction.
+        dropout_rate (float): Dropout rate to apply in dense layers.
+
+    Returns:
+        Model: A Keras model with independent multi-output architecture.
+    """
+    # Base Model
+    base_model = ResNet50V2(include_top=False, weights=base_weights, input_shape=input_shape)
+    base_model.trainable = base_trainable
+
+    # Input and data augmentation layers
+    inputs = Input(shape=input_shape)
+    x = augmentation_layer(inputs) if augmentation_layer else inputs
+    x = resnet_preprocess(x)
+    x = base_model(x, training=False)
+
+
+    # Shared dense layer for better feature learning
+    global_features = GlobalAveragePooling2D()(x)
+    shared_layer = Dense(shared_layer_neurons, activation=None, name='shared_layer')(global_features)
+    shared_layer = BatchNormalization()(shared_layer)
+    shared_layer = Activation('relu')(shared_layer)
+    
+    # Family branch
+    family_branch = Dense(family_neurons, activation="relu")(global_features)
+    family_branch = Dropout(dropout_rate)(family_branch)
+    family_output = Dense(n_families, activation="softmax", name="family")(family_branch)
+
+    # Genus branch
+    genus_branch = Dense(genus_neurons, activation="relu")(global_features)
+    genus_branch = Dropout(dropout_rate)(genus_branch)
+    genus_output = Dense(n_genera, activation="softmax", name="genus")(genus_branch)
+
+    # Species branch
+    species_branch = Dense(species_neurons, activation="relu")(global_features)
+    species_branch = Dropout(dropout_rate)(species_branch)
+    species_output = Dense(n_species, activation="softmax", name="species")(species_branch)
+
+    # Create the model
+    model = Model(inputs=inputs, outputs=[family_output, genus_output, species_output])
+
+    return model
+
 # Proteon Model Function
 def proteon(
     input_shape=(224, 224, 3), 
