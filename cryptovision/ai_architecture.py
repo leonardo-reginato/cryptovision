@@ -152,6 +152,92 @@ def independent_multi_output_model(
 
     return model
 
+
+def hierarchical_multi_output_model(
+    input_shape=(384, 384, 3),
+    n_families=10,
+    n_genera=10,
+    n_species=10,
+    base_weights="imagenet",
+    base_trainable=False,
+    augmentation_layer=None,
+    shared_neurons=512,
+    family_neurons=256,
+    genus_neurons=256,
+    species_neurons=256,
+    dropout_rate=0.3
+):
+    """
+    Creates a multi-output deep learning model with a hierarchical structure,
+    including one convolutional layer before each output and adding independent convolutional layers.
+
+    Args:
+        input_shape (tuple): Shape of the input image.
+        n_families (int): Number of family classes.
+        n_genera (int): Number of genus classes.
+        n_species (int): Number of species classes.
+        base_weights (str): Weights for the base model (e.g., "imagenet").
+        base_trainable (bool): Whether the base model is trainable.
+        augmentation_layer (Layer): Data augmentation layer to apply before the model.
+        shared_neurons (int): Number of neurons in the shared dense layer.
+        family_neurons (int): Number of neurons in the dense layer for family prediction.
+        genus_neurons (int): Number of neurons in the dense layer for genus prediction.
+        species_neurons (int): Number of neurons in the dense layer for species prediction.
+        dropout_rate (float): Dropout rate to apply in dense layers.
+
+    Returns:
+        Model: A Keras model with hierarchical multi-output architecture.
+    """
+    # Base Model
+    base_model = ResNet50V2(include_top=False, weights=base_weights, input_shape=input_shape)
+    base_model.trainable = base_trainable
+
+    # Input and data augmentation layers
+    inputs = Input(shape=input_shape)
+    x = augmentation_layer(inputs) if augmentation_layer else inputs
+    x = resnet_preprocess(x)
+    x = base_model(x, training=False)
+
+    # Shared feature extraction
+    shared_features = GlobalAveragePooling2D()(x)
+    shared_features = Dense(shared_neurons, activation=None, name='shared_features')(shared_features)
+    shared_features = BatchNormalization()(shared_features)
+    shared_features = Activation('relu')(shared_features)
+    shared_features = Dropout(dropout_rate)(shared_features)
+
+    # Family branch with convolutional layer
+    family_conv = Conv2D(64, (3, 3), activation="relu", padding="same")(x)
+    family_pool = MaxPooling2D((2, 2))(family_conv)
+    family_flatten = Flatten()(family_pool)
+    family_combined = Concatenate()([shared_features, family_flatten])
+    family_hidden = Dense(family_neurons, activation='relu')(family_combined)
+    family_hidden = Dropout(dropout_rate)(family_hidden)
+    family_output = Dense(n_families, activation="softmax", name="family")(family_hidden)
+
+    # Genus branch with convolutional layer
+    genus_conv = Conv2D(128, (3, 3), activation="relu", padding="same")(x)
+    genus_pool = MaxPooling2D((2, 2))(genus_conv)
+    genus_flatten = Flatten()(genus_pool)
+    genus_combined = Concatenate()([shared_features, genus_flatten])
+    genus_hidden = Dense(genus_neurons, activation='relu')(genus_combined)
+    genus_hidden = Dropout(dropout_rate)(genus_hidden)
+    genus_output = Dense(n_genera, activation="softmax", name="genus")(genus_hidden)
+
+    # Species branch with convolutional layer
+    species_conv = Conv2D(256, (3, 3), activation="relu", padding="same")(x)
+    species_pool = MaxPooling2D((2, 2))(species_conv)
+    species_flatten = Flatten()(species_pool)
+    species_combined = Concatenate()([shared_features, species_flatten])
+    species_hidden = Dense(species_neurons, activation='relu')(species_combined)
+    species_hidden = Dropout(dropout_rate)(species_hidden)
+    species_output = Dense(n_species, activation="softmax", name="species")(species_hidden)
+
+    # Create the model
+    model = Model(inputs=inputs, outputs=[family_output, genus_output, species_output])
+
+    return model
+
+
 # Proteon Model Function
 def proteon(
     input_shape=(224, 224, 3), 

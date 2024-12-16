@@ -13,7 +13,7 @@ from cryptovision.tools import (
 )
 from cryptovision.ai_architecture import (
     proteon, augmentation_layer, phorcys, phorcys_conv, stable_phorcys_conv,
-    independent_multi_output_model
+    independent_multi_output_model, hierarchical_multi_output_model
 )
 
 # Initialize Typer app and set mixed precision for TensorFlow
@@ -91,13 +91,14 @@ def main(
         )
 
         # Model Creation
-        model = independent_multi_output_model(
+        model = hierarchical_multi_output_model(
             input_shape=IND_MOM["input_shape"],
             n_families=len(family_labels),
             n_genera=len(genus_labels),
             n_species=len(species_labels),
             augmentation_layer=data_augmentation,
             dropout_rate=IND_MOM["dropout_rate"],
+            shared_neurons=IND_MOM["shared_neurons"],
             family_neurons=IND_MOM["family_neurons"],
             genus_neurons=IND_MOM["genus_neurons"],
             species_neurons=IND_MOM["species_neurons"],
