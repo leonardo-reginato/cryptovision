@@ -169,7 +169,7 @@ def hierarchical_multi_output_model(
 ):
     """
     Creates a multi-output deep learning model with a hierarchical structure,
-    including one convolutional layer before each output and adding independent convolutional layers.
+    including one convolutional layer before each output and reducing hierarchical dependence using attention weights.
 
     Args:
         input_shape (tuple): Shape of the input image.
@@ -186,7 +186,7 @@ def hierarchical_multi_output_model(
         dropout_rate (float): Dropout rate to apply in dense layers.
 
     Returns:
-        Model: A Keras model with hierarchical multi-output architecture.
+        Model: A Keras model with reduced hierarchical dependence.
     """
     # Base Model
     base_model = ResNet50V2(include_top=False, weights=base_weights, input_shape=input_shape)
@@ -209,25 +209,32 @@ def hierarchical_multi_output_model(
     family_conv = Conv2D(64, (3, 3), activation="relu", padding="same")(x)
     family_pool = MaxPooling2D((2, 2))(family_conv)
     family_flatten = Flatten()(family_pool)
-    family_combined = Concatenate()([shared_features, family_flatten])
-    family_hidden = Dense(family_neurons, activation='relu')(family_combined)
+    family_hidden = Dense(family_neurons, activation='relu')(family_flatten)
     family_hidden = Dropout(dropout_rate)(family_hidden)
     family_output = Dense(n_families, activation="softmax", name="family")(family_hidden)
+
+    # Attention mechanism for genus branch
+    family_attention = Dense(shared_neurons, activation="sigmoid", name="family_attention")(family_hidden)
+    weighted_family_features = Multiply()([shared_features, family_attention])
 
     # Genus branch with convolutional layer
     genus_conv = Conv2D(128, (3, 3), activation="relu", padding="same")(x)
     genus_pool = MaxPooling2D((2, 2))(genus_conv)
     genus_flatten = Flatten()(genus_pool)
-    genus_combined = Concatenate()([shared_features, genus_flatten])
+    genus_combined = Concatenate()([weighted_family_features, genus_flatten])
     genus_hidden = Dense(genus_neurons, activation='relu')(genus_combined)
     genus_hidden = Dropout(dropout_rate)(genus_hidden)
     genus_output = Dense(n_genera, activation="softmax", name="genus")(genus_hidden)
+
+    # Attention mechanism for species branch
+    genus_attention = Dense(shared_neurons, activation="sigmoid", name="genus_attention")(genus_hidden)
+    weighted_genus_features = Multiply()([shared_features, genus_attention])
 
     # Species branch with convolutional layer
     species_conv = Conv2D(256, (3, 3), activation="relu", padding="same")(x)
     species_pool = MaxPooling2D((2, 2))(species_conv)
     species_flatten = Flatten()(species_pool)
-    species_combined = Concatenate()([shared_features, species_flatten])
+    species_combined = Concatenate()([weighted_genus_features, species_flatten])
     species_hidden = Dense(species_neurons, activation='relu')(species_combined)
     species_hidden = Dropout(dropout_rate)(species_hidden)
     species_output = Dense(n_species, activation="softmax", name="species")(species_hidden)

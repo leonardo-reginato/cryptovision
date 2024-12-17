@@ -608,7 +608,7 @@ class CryptoVisionAI:
             
         return predictions
     
-    def saliency_map(self, level, image_path, figure_size = (15, 8)):
+    def saliency_map(self, level, image_path, figure_size = (15, 8), image_show = True):
         
         self.image_path = image_path
         preds = self.model.predict(self.image_array, verbose=0)
@@ -627,28 +627,29 @@ class CryptoVisionAI:
         saliency_map = saliency(score, self.image_array, smooth_samples=20, smooth_noise=0.2)
         saliency_map = normalize(saliency_map)
         
-        # Plot results
-        plt.figure(figsize=figure_size)
-        plt.suptitle(f"Predicted Class: {preds[level]['name']} - {preds[level]['prob']*100:.2f}%", fontsize=14)
+        if image_show:
+            # Plot results
+            plt.figure(figsize=figure_size)
+            plt.suptitle(f"Predicted Class: {preds[level]['name']} - {preds[level]['prob']*100:.2f}%", fontsize=14)
+            
+            # Original Image
+            plt.subplot(1, 3, 1)
+            plt.title("Original")
+            plt.imshow(self.image)
+            plt.axis('off')
+            
+            # Saliency Map
+            plt.subplot(1, 3, 2)
+            plt.title("Saliency Map")
+            plt.imshow(saliency_map[0], cmap='jet')
+            plt.axis('off')
+            
+            # Saliency overlay
+            plt.subplot(1, 3, 3)
+            plt.title("Saliency Overlay")
+            plt.imshow(self.image)
+            plt.imshow(saliency_map[0], cmap='jet', alpha=0.5)  # Overlay saliency map with transparency
+            plt.axis('off')
         
-        # Original Image
-        plt.subplot(1, 3, 1)
-        plt.title("Original")
-        plt.imshow(self.image)
-        plt.axis('off')
-        
-        # Saliency Map
-        plt.subplot(1, 3, 2)
-        plt.title("Saliency Map")
-        plt.imshow(saliency_map[0], cmap='jet')
-        plt.axis('off')
-        
-        # Saliency overlay
-        plt.subplot(1, 3, 3)
-        plt.title("Saliency Overlay")
-        plt.imshow(self.image)
-        plt.imshow(saliency_map[0], cmap='jet', alpha=0.5)  # Overlay saliency map with transparency
-        plt.axis('off')
-        
-        pass
+        return saliency_map
 
