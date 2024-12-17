@@ -3,12 +3,13 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import matplotlib.pyplot as plt
+from PIL import Image
 from sklearn.model_selection import train_test_split
-from tqdm import tqdm
 from tf_keras_vis.utils.model_modifiers import ReplaceToLinear
 from tf_keras_vis.utils.scores import CategoricalScore
 from tf_keras_vis.saliency import Saliency
-from tf_keras_vis.utils import normalize
+from skimage.segmentation import mark_boundaries
+from lime.lime_image import LimeImageExplainer
 
 def image_directory_to_pandas(image_path):
     """
@@ -429,227 +430,222 @@ def analyze_taxonomic_misclassifications(
 class CryptoVisionAI:
     def __init__(self, model_path, family_names, genus_names, species_names):
         """
-        Initializes the CryptoVisionAI class.
-        
-        Parameters:
-            model (tf.keras.Model): The trained model for prediction.
-            family_names (list): List of family label names.
-            genus_names (list): List of genus label names.
-            species_names (list): List of species label names.
+        Initialize the CryptoVisionAI class.
         """
         self.model = tf.keras.models.load_model(model_path)
         self.family_names = family_names
         self.genus_names = genus_names
         self.species_names = species_names
-        self.target_size = self.model.input_shape[1:3]
-    
-    @property  
-    def image(self):
-        return tf.keras.preprocessing.image.load_img(self.image_path, target_size=self.target_size)    
-    
+        self.input_size = self.model.input_shape[1:3]
+        self._image = None
+        self._image_array = None
+
     @property
     def family_model(self):
-        if not hasattr(self, '_family_model'):
-            self._family_model = tf.keras.models.Model(
-                inputs=self.model.input,
-                outputs=self.model.get_layer('family').output
-            )
-        return self._family_model
-    
+        return tf.keras.Model(inputs=self.model.input, outputs=self.model.get_layer('family').output)
+
     @property
     def genus_model(self):
-        if not hasattr(self, '_genus_model'):
-            self._genus_model = tf.keras.models.Model(
-                inputs=self.model.input,
-                outputs=self.model.get_layer('genus').output
-            )
-        return self._genus_model
-    
+        return tf.keras.Model(inputs=self.model.input, outputs=self.model.get_layer('genus').output)
+
     @property
     def species_model(self):
-        if not hasattr(self, '_species_model'):
-            self._species_model = tf.keras.models.Model(
-                inputs=self.model.input,
-                outputs=self.model.get_layer('species').output
-            )
-        return self._species_model
-    
+        return tf.keras.Model(inputs=self.model.input, outputs=self.model.get_layer('species').output)
+
+    @property
+    def image(self):
+        return self._image
+
     @property
     def image_array(self):
+        return self._image_array
+
+    @property
+    def confidence(self):
         try:
-            image_array = tf.keras.preprocessing.image.img_to_array(self.image)
-            image_array = np.expand_dims(image_array, axis=0)
-            return image_array
-        except Exception as e:
-            print(f"Error processing image at {self.image_path}: {e}")
-            return None
+            family_pred = self.preds[0].max() if self.preds[0] is not None else "Unknown"
+            genus_pred = self.preds[1].max() if self.preds[1] is not None else "Unknown"
+            species_pred = self.preds[2].max() if self.preds[2] is not None else "Unknown"
+            return (family_pred, genus_pred, species_pred)
+        except IndexError:
+            return ("Unknown", "Unknown", "Unknown")
+    
+    def load_image(self, image_path):
+        """
+        Load and preprocess an image for prediction.
+        """
+        self._image = tf.keras.utils.load_img(image_path, target_size=self.input_size)
+        img_array = tf.keras.utils.img_to_array(self._image)
+        self._image_array = np.expand_dims(img_array, axis=0)
+        return self._image_array
 
     def decoder(self, preds):
         try:
             family_pred = self.family_names[np.argmax(preds[0])] if preds[0] is not None else "Unknown"
             genus_pred = self.genus_names[np.argmax(preds[1])] if preds[1] is not None else "Unknown"
             species_pred = self.species_names[np.argmax(preds[2])] if preds[2] is not None else "Unknown"
-            return [family_pred, genus_pred, species_pred]
+            return (family_pred, genus_pred, species_pred)
         except IndexError:
-            return ["Unknown", "Unknown", "Unknown"]
-    
-    def complete_prediction(self, preds):
+            return ("Unknown", "Unknown", "Unknown")
+
+    def predict(self, input_data, return_raw=False, top_k=1):
         """
-        Predicts labels for a single image.
-
-        Parameters:
-            image (np.array): Preprocessed image.
-            return_probabilities (bool): Whether to return probabilities.
-
+        Predict family, genus, and species for a given input.
+        
+        Args:
+            input_data (str, np.array, tf.data.Dataset, or pd.DataFrame): Input image path, numpy array, TensorFlow dataset, or pandas dataframe.
+            return_raw (bool): If True, return raw predictions.
+            top_k (int): Number of top predictions to return for each level.
         Returns:
-            list: Predicted labels.
+            dict or list: Decoded predictions or raw predictions for the input data.
         """
         
-        results = {
-            'family': {},
-            'genus': {},
-            'species': {},
-        }
-        
-        family_pred = np.argmax(preds[0])
-        genus_pred = np.argmax(preds[1])
-        species_pred = np.argmax(preds[2])
-        
-        family_label, genus_label, species_label = self.decoder(preds)
-        
-        # Return the predicted names
-        results['family']['name'] = family_label
-        results['genus']['name'] = genus_label
-        results['species']['name'] = species_label
-        
-        # Return the predicted labels
-        results['family']['label'] = family_pred
-        results['genus']['label'] = genus_pred
-        results['species']['label'] = species_pred
-        
-        # Return the predicted probabilities
-        results['family']['prob'] = preds[0].max()
-        results['genus']['prob'] = preds[1].max()
-        results['species']['prob'] = preds[2].max()
-        
-        return results
+        # Predict from Input Path
+        if isinstance(input_data, str):
+            # Validate path
+            if os.path.exists(input_data):
+                img = self.load_image(input_data)
+            else:
+                raise FileNotFoundError(f"The provided path does not exist: {input_data}")
+            self.preds = self.model.predict(img, verbose=0)
+            return self.preds if return_raw else self.decoder(self.preds)
 
-    def predict_from_path(self, image_path, prediction_type='labels'):
+        # Predict from PIL Image
+        elif isinstance(input_data, Image.Image):
+            img = tf.keras.utils.img_to_array(input_data)
+            img = np.expand_dims(img, axis=0)
+            self.preds = self.model.predict(img, verbose=0)
+            return self.preds if return_raw else self.decoder(self.preds)
+
+        elif isinstance(input_data, np.ndarray):
+            img = input_data
+            self.preds = self.model.predict(img, verbose=0)
+            return self.preds if return_raw else self.decoder(self.preds)
+        
+        elif isinstance(input_data, tf.data.Dataset):
+            predictions = []
+            for img_batch, _ in input_data:
+                preds = self.model.predict(img_batch, verbose=0)
+                for p in zip(*preds):  # Unpack predictions for batch
+                    predictions.append(self.decoder(p))
+            return predictions if not return_raw else preds
+        
+        else:
+            raise TypeError("Unsupported input type. Supported types: str (path), np.ndarray, tf.data.Dataset, pd.DataFrame")
+
+    def generate_saliency_map(self, level, smooth_samples=20, smooth_noise=0.2):
         """
-        Predicts labels from a list of image paths.
+        Generate a saliency map for a specific prediction level.
         
-        Parameters:
-            image_paths (list): List of image paths.
-            batch_size (int): Size of batches for prediction.
-        
+        Args:
+            level (str): One of ['family', 'genus', 'species'].
+            smooth_samples (int): Number of smoothing samples.
+            smooth_noise (float): Noise for smoothing.
         Returns:
-            list: Predictions for all images.
+            np.ndarray: Saliency map.
         """
-        results = []
-        self.image_path = image_path
-        preds = self.model.predict(self.image_array, verbose=0)
-        if prediction_type == 'complete':
-            return self.complete_prediction(preds)
-        elif prediction_type == 'raw':
-            return preds
-        elif prediction_type == 'labels':
-            return self.decoder(preds)
-
-    def predict_from_dataframe(self, dataframe, reference_column, batch_size=64):
-        """
-        Predicts labels from a pandas DataFrame with image paths in batches, with progress tracking.
+        if self.image_array is None:
+            raise ValueError("No image loaded. Use predict or load an image first.")
         
-        Parameters:
-            dataframe (pd.DataFrame): DataFrame containing image paths and metadata.
-            reference_column (str): Column containing the image paths.
-            batch_size (int): Number of images to process per batch.
-        
-        Returns:
-            list: List of predictions for all images.
-        """
-        predictions = []
-        num_batches = (len(dataframe) + batch_size - 1) // batch_size  # Calculate the total number of batches
-
-        with tqdm(total=num_batches, desc="Predicting Batches") as pbar:
-            for i in range(0, len(dataframe), batch_size):
-                batch_df = dataframe.iloc[i:i + batch_size]
-                batch_images = np.vstack([self.image_path_to_array(row[reference_column]) for _, row in batch_df.iterrows()])
-                batch_preds = self.model.predict(batch_images, verbose=0)
-                decoded_batch = [
-                    self.decoder([batch_preds[0][i], batch_preds[1][i], batch_preds[2][i]]) 
-                    for i in range(len(batch_preds[0]))
-                ]
-                predictions.extend(decoded_batch)
-                pbar.update(1)
-        
-        return predictions
-
-    def predict_from_tf_dataset(self, tf_dataset):
-        """
-        Predicts labels from a TensorFlow dataset.
-
-        Parameters:
-            tf_dataset (tf.data.Dataset): Dataset containing images and labels.
-
-        Returns:
-            list: Decoded predictions for all images in the dataset.
-        """
-        predictions = []
-        for batch in tqdm(tf_dataset, desc="Predicting with Dataset"):
-            img_batch, _ = batch  # Assuming labels are the second element
-            preds = self.model.predict(img_batch, verbose=0)
-            
-            # Decode predictions for the batch
-            decoded_batch = [
-                self.decoder([preds[0][i], preds[1][i], preds[2][i]]) 
-                for i in range(len(preds[0]))
-            ]
-            predictions.extend(decoded_batch)
-            
-        return predictions
-    
-    def saliency_map(self, level, image_path, figure_size = (15, 8), image_show = True):
-        
-        self.image_path = image_path
-        preds = self.model.predict(self.image_array, verbose=0)
-        preds = self.complete_prediction(preds)
-        class_index = preds[level]['label']
-        
+        # Select model outputs based on level
         if level == 'family':
             model = self.family_model
         elif level == 'genus':
             model = self.genus_model
         elif level == 'species':
             model = self.species_model
-            
+        else:
+            raise ValueError("Level must be one of ['family', 'genus', 'species']")
+        
+        # Predict class and get the predicted index
+        preds = self.model.predict(self.image_array, verbose=0)
+        class_index = np.argmax(preds[['family', 'genus', 'species'].index(level)])
+        
+        # Generate saliency map
         score = CategoricalScore([class_index])
         saliency = Saliency(model, model_modifier=ReplaceToLinear(), clone=False)
-        saliency_map = saliency(score, self.image_array, smooth_samples=20, smooth_noise=0.2)
-        saliency_map = normalize(saliency_map)
+        saliency_map = saliency(score, self.image_array, smooth_samples=smooth_samples, smooth_noise=smooth_noise)
+        return (saliency_map)
+
+    def plot_saliency_overlay(self, saliency_map, figure_size=(15, 8)):
+        """
+        Plot the saliency map over the original image.
         
-        if image_show:
-            # Plot results
-            plt.figure(figsize=figure_size)
-            plt.suptitle(f"Predicted Class: {preds[level]['name']} - {preds[level]['prob']*100:.2f}%", fontsize=14)
-            
-            # Original Image
-            plt.subplot(1, 3, 1)
-            plt.title("Original")
-            plt.imshow(self.image)
-            plt.axis('off')
-            
-            # Saliency Map
-            plt.subplot(1, 3, 2)
-            plt.title("Saliency Map")
-            plt.imshow(saliency_map[0], cmap='jet')
-            plt.axis('off')
-            
-            # Saliency overlay
-            plt.subplot(1, 3, 3)
-            plt.title("Saliency Overlay")
-            plt.imshow(self.image)
-            plt.imshow(saliency_map[0], cmap='jet', alpha=0.5)  # Overlay saliency map with transparency
-            plt.axis('off')
+        Args:
+            saliency_map (np.ndarray): Saliency map to overlay.
+            figure_size (tuple): Size of the matplotlib figure.
+        """
+        if self.image is None or self.image_array is None:
+            raise ValueError("No image loaded. Use predict or load an image first.")
         
-        return saliency_map
+        plt.figure(figsize=figure_size)
+        #plt.subplot(1, 2, 1)
+        #plt.title("Original Image")
+        #plt.imshow(self.image)
+        #plt.axis('off')
+
+        #plt.subplot(1, 2, 2)
+        plt.title("Saliency Map Overlay")
+        plt.imshow(self.image)
+        plt.imshow(saliency_map[0], cmap='jet', alpha=0.5)
+        plt.axis('off')
+        plt.show()
+
+    def generate_lime_explanation(self, top_labels=3, num_samples=1000):
+        """
+        Generate LIME explanation for the given image.
+        
+        Args:
+            image_path (str): Path to the input image.
+            top_labels (int): Number of top labels to explain.
+            num_samples (int): Number of samples to generate for LIME.
+        Returns:
+            explanation (lime.explanation): LIME explanation result.
+        """
+        if self.image is None or self.image_array is None:
+            raise ValueError("No image loaded. Use predict or load an image first.")
+        
+        # Load and preprocess the image
+        image = np.squeeze(self._image_array)
+        
+        # Define prediction function for LIME
+        def predict_function(images):
+            preds = self.model.predict(images, verbose=0)
+            return preds[2]
+        
+        explainer = LimeImageExplainer()
+        explanation = explainer.explain_instance(
+            image, 
+            predict_function, 
+            top_labels=top_labels, 
+            num_samples=num_samples
+        )
+        return explanation
+
+    def plot_lime_results(self, explanation, positive_only=False, negative_only=True, hide_rest=True, num_features=5, figure_size=(10, 5)):
+        """
+        Plot the LIME explanation results.
+        
+        Args:
+            explanation (lime.explanation): LIME explanation result.
+            label (int): The label index to explain.
+            positive_only (bool): Show only positive contributions.
+            hide_rest (bool): Hide regions not contributing to the label.
+            num_features (int): Number of features to display.
+            figure_size (tuple): Size of the matplotlib figure.
+        """
+        temp, mask = explanation.get_image_and_mask(
+            explanation.top_labels[0],
+            positive_only=positive_only,
+            negative_only=negative_only,
+            hide_rest=hide_rest,
+            num_features=num_features
+        )
+        
+        plt.figure(figsize=figure_size)
+        plt.imshow(self.image)
+        plt.imshow(mark_boundaries(temp, mask), cmap='jet', alpha=0.5)
+        plt.title("LIME Explanation")
+        plt.axis('off')
+        plt.show()
 
