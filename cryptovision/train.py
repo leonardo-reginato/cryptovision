@@ -1,6 +1,8 @@
+import os
 import wandb
 import typer
 import tensorflow as tf
+import pandas as pd
 from pathlib import Path
 from loguru import logger
 from wandb.integration.keras import WandbMetricsLogger
@@ -59,6 +61,39 @@ def main(
         
         # Dataset Setup
         image_df = image_directory_to_pandas(dataset_dir)
+        #df_lab = image_directory_to_pandas("/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/fish_functions/Species_v03")
+        #df_web = image_directory_to_pandas("/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/web/Species_v01")
+        #df_inatlist = image_directory_to_pandas("/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/inaturalist/Species_v02")
+        
+        #df = pd.concat([df_lab, df_web, df_inatlist], ignore_index=True, axis=0)
+
+        # find in the species column the values with lass than 50 occurences
+        #counts = df['species'].value_counts()
+        #image_df = df[df['species'].isin(counts[counts > 50].index)]
+        
+        def get_labels(path):
+            family_list = []
+            genus_list = []
+            species_list = []
+            
+            for folder in os.listdir(path):
+                if folder == ".DS_Store":
+                    continue
+                
+                family, genus, species = folder.split("_")
+                
+                family_list.append(family)
+                genus_list.append(genus)
+                species_list.append(f"{genus} {species}")
+                
+            return sorted(set(family_list)), sorted(set(genus_list)), sorted(set(species_list))
+        
+        family_labels, genus_labels, species_labels = get_labels(
+            "/Users/leonardo/Documents/Projects/cryptovision/data/processed/cv_images_dataset"
+        )
+        
+        #image_df = df[df['species'].isin(species_labels)]
+        
         train_df, val_df, test_df = split_image_dataframe(
             image_df,
             test_size=SETUP["test_size"],
@@ -91,17 +126,16 @@ def main(
         )
 
         # Model Creation
-        model = hierarchical_multi_output_model(
-            input_shape=IND_MOM["input_shape"],
+        model = phorcys(
+            input_shape=PHORCYS["input_shape"],
             n_families=len(family_labels),
             n_genera=len(genus_labels),
             n_species=len(species_labels),
             augmentation_layer=data_augmentation,
-            dropout_rate=IND_MOM["dropout_rate"],
-            shared_neurons=IND_MOM["shared_neurons"],
-            family_neurons=IND_MOM["family_neurons"],
-            genus_neurons=IND_MOM["genus_neurons"],
-            species_neurons=IND_MOM["species_neurons"],
+            shared_layer_dropout=PHORCYS["dropout"],
+            shared_layer_neurons=PHORCYS["shared_layer"],
+            genus_hidden_neurons=PHORCYS["genus_hidden"],
+            species_hidden_neurons=PHORCYS["species_hidden"],
         )
 
         # Model Summary

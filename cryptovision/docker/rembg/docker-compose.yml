@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  rembg:
+    build: .
+    volumes:
+      - /Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/fish_functions/Species_v02:/app/input
+      - /Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/fish_functions/Species_v03:/app/output
+      #- ~/.u2net:/root/.u2net  # Persist the u2net model download
+    environment:
+      - INPUT_PATH=/app/input
+      - OUTPUT_PATH=/app/output
+    command: ["--input", "/app/input", "--output", "/app/output"]
