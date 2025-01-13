@@ -33,7 +33,7 @@ SETUP = {
     # General Setup
     "seed": 42,
     "verbose": 1,
-    'batch_size': 128,
+    'batch_size': 64,
     "img_size": (384, 384),
     "sufix": "phorcys_old_df",
     "arch_type": "hacpl",
@@ -83,7 +83,7 @@ SETUP = {
     "lr_min": 1e-6,
     
     # Fine-tuning Setup
-    "ftun_last_layers": 100,
+    "ftun_last_layers": 90,
     "ftun_learning_rate": 1e-5,
     "ftun_epochs": 10,  
 }
@@ -104,11 +104,11 @@ PROTEON = {
 
 PHORCYS = {
     "input_shape": SETUP['img_size'] + (3,),
-    "nick_name": "phorcys_medium_v2",
+    "nick_name": "phorcys_v09_v2",
     "dropout": 0.3,
     "shared_layer": 512,
     "genus_hidden": 256,
-    "species_hidden": 256,
+    "species_hidden": 128,
     "attention": False
 }
 

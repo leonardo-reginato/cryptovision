@@ -4,7 +4,7 @@ from loguru import logger
 from colorama import Fore, Style   
 from tensorflow.keras import Layer                                                                              # type: ignore
 from tensorflow.keras.callbacks import Callback                                                                 # type: ignore
-from tensorflow.keras.applications import ResNet50V2, EfficientNetV2B0, EfficientNetV2B3, EfficientNetB3        # type: ignore
+from tensorflow.keras.applications import ResNet50V2, EfficientNetV2B0, EfficientNetV2B3, ResNet101V2, EfficientNetB3        # type: ignore
 from tensorflow.keras.applications.resnet_v2 import preprocess_input as resnet_preprocess                       # type: ignore
 from tensorflow.keras.applications.efficientnet_v2 import preprocess_input as efficientnet_preprocess           # type: ignore
 from tensorflow.keras import layers                                                                             # type: ignore
@@ -265,18 +265,21 @@ def shared_feature_model (name, labels, pretrain, preprocess, input_shape, share
     x = pretrain(x, training=False)
     
     # Feature Extracion from Pretrained Model
-    features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(x)
+    #features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(x)
     #features = layers.GlobalMaxPooling2D()(x)
+    
+    # Feature Extracion from Pretrained Model
+    features = layers.Flatten()(x)
     
     shared_layer = layers.Dense(shared_neurons, name='shared_layer')(features)
     shared_layer = layers.BatchNormalization()(shared_layer)
     shared_layer = layers.Activation('relu')(shared_layer)
-    shared_layer = layers.Dropout(0.3)(shared_layer)
+    shared_layer = layers.Dropout(0.5)(shared_layer)
     
-    shared_layer = layers.Dense(shared_neurons // 2, activation=None, name='shared_dense2')(shared_layer)
-    shared_layer = layers.BatchNormalization()(shared_layer)
-    shared_layer = layers.Activation('relu')(shared_layer)
-    shared_layer = layers.Dropout(0.3)(shared_layer)
+    #shared_layer = layers.Dense(shared_neurons // 2, activation=None, name='shared_dense2')(shared_layer)
+    #shared_layer = layers.BatchNormalization()(shared_layer)
+    #shared_layer = layers.Activation('relu')(shared_layer)
+    #shared_layer = layers.Dropout(0.3)(shared_layer)
     
     # Family Output
     family_output = layers.Dense(len(labels['family']), activation='softmax', name='family')(shared_layer)
@@ -335,7 +338,8 @@ def shared_concat_model (name, labels, pretrain, preprocess, input_shape, shared
     x = pretrain(x, training=False)
     
     # Feature Extracion from Pretrained Model
-    features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(x)
+    #features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(x)
+    features = layers.Flatten()(x)
     
     shared_layer = layers.Dense(shared_neurons, name='shared_layer')(features)
     shared_layer = layers.BatchNormalization()(shared_layer)
@@ -346,11 +350,50 @@ def shared_concat_model (name, labels, pretrain, preprocess, input_shape, shared
     family_output = layers.Dense(len(labels['family']), activation='softmax', name='family')(shared_layer)
     
     # Genus Output
-    genus_features = layers.Concatenate()([shared_layer, family_output])
+    family_to_genus = layers.Dense(len(labels['genus']), activation='relu', name='family_to_genus_mapping')(family_output)
+    genus_features = layers.Concatenate()([shared_layer, family_to_genus])
     genus_output = layers.Dense(len(labels['genus']), activation='softmax', name='genus')(genus_features)
     
     # Species Output
-    species_features = layers.Concatenate()([shared_layer, family_output, genus_output])
+    genus_to_species = layers.Dense(len(labels['species']), activation='relu', name='genus_to_species_mapping')(genus_output)
+    species_features = layers.Concatenate()([shared_layer, genus_to_species])
+    species_output = layers.Dense(len(labels['species']), activation='softmax', name='species')(species_features)
+    
+    model = tf.keras.Model(inputs, [family_output, genus_output, species_output], name=name)
+    
+    return model
+
+def shared_concat_modelv2 (name, labels, pretrain, preprocess, input_shape, shared_neurons=2048, augmentation=None):
+    
+    inputs = layers.Input(shape=input_shape, name='input_layer')
+    x = augmentation(inputs) if augmentation else inputs
+    x = preprocess(x)
+    x = pretrain(x, training=False)
+    
+    # Feature Extracion from Pretrained Model
+    features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(x)
+    
+    #residual_features = layers.GlobalMaxPooling2D(name='GlobMaxPool2D')(x)
+    #features = layers.Concatenate(name='concat_features')([features, residual_features])
+    
+    shared_layer = layers.Dense(shared_neurons, name='shared_layer')(features)
+    shared_layer = layers.LayerNormalization()(shared_layer)
+    shared_layer = layers.Activation('relu')(shared_layer)
+    shared_layer = layers.Dropout(0.3)(shared_layer)
+    
+    # Family Output
+    family_output = layers.Dense(len(labels['family']), activation='softmax', name='family')(shared_layer)
+    
+    # Genus Output
+    family_mask = layers.Dense(shared_neurons, activation='relu', name='family_to_genus_mapping')(family_output)
+    genus_features = layers.Multiply()([shared_layer, family_mask])
+    genus_features = layers.LayerNormalization()(genus_features)
+    genus_output = layers.Dense(len(labels['genus']), activation='softmax', name='genus')(genus_features)
+    
+    # Species Output
+    genus_mask = layers.Dense(shared_neurons, activation='relu', name='genus_to_species_mapping')(genus_output)
+    species_features = layers.Multiply()([shared_layer, genus_mask])
+    species_features = layers.LayerNormalization()(species_features)
     species_output = layers.Dense(len(labels['species']), activation='softmax', name='species')(species_features)
     
     model = tf.keras.Model(inputs, [family_output, genus_output, species_output], name=name)
@@ -630,7 +673,7 @@ def phorcys_v09 (labels, input_shape):
     shared_layer = layers.Dense(512,name='shared_layer')(features)
     shared_layer = layers.BatchNormalization()(shared_layer)
     shared_layer = layers.Activation('relu')(shared_layer)
-    shared_layer = layers.Dropout(0.2)(shared_layer)
+    shared_layer = layers.Dropout(0.3)(shared_layer)
 
     # Family Output
     family_output = layers.Dense(len(labels['family']), activation='softmax', name='family')(shared_layer)
@@ -642,13 +685,68 @@ def phorcys_v09 (labels, input_shape):
 
     # Species Output
     species_features = layers.Concatenate()([shared_layer, family_output, genus_output])
-    species_hidden = layers.Dense(256, activation='relu')(species_features)
+    species_hidden = layers.Dense(128, activation='relu')(species_features)
     species_output = layers.Dense(len(labels['species']), activation='softmax', name='species')(species_hidden)
 
     model = tf.keras.Model(
         inputs, 
         [family_output, genus_output, species_output],
         name = "PhorcysV9"
+    )
+    
+    return model
+
+def phorcys_v10 (labels, input_shape):
+    
+    pretrain = ResNet50V2(include_top=False, weights='imagenet', input_shape=input_shape)
+    pretrain.trainable = False
+
+    augmentation = tf.keras.Sequential(
+        [
+            layers.RandomFlip("horizontal"),
+            layers.RandomRotation(0.2),
+            layers.RandomZoom(0.2),
+            layers.RandomTranslation(0.1, 0.1),
+            layers.RandomContrast(0.2),
+            layers.RandomBrightness(0.2),
+        ],
+        name='data_augmentation'
+    )
+
+    inputs = layers.Input(shape=input_shape, name='input')
+    x = augmentation(inputs)
+    x = resnet_preprocess(x)
+    x = pretrain(x, training=False)
+    features = layers.GlobalAveragePooling2D()(x)
+
+    shared_layer = layers.Dense(2048,name='shared_layer')(features)
+    shared_layer = layers.BatchNormalization()(shared_layer)
+    shared_layer = layers.Activation('relu')(shared_layer)
+    shared_layer = layers.Dropout(0.3)(shared_layer)
+
+    # Family Output
+    family_output = layers.Dense(len(labels['family']), activation='softmax', name='family')(shared_layer)
+
+    # Genus Output
+    family_features = layers.Dense(len(labels['genus']), activation='relu')(family_output)
+    shared_features_genus = layers.Dense(len(labels['genus']), activation='relu')(shared_layer)
+    genus_features = layers.Multiply()([shared_features_genus, family_features])
+    genus_features = layers.LayerNormalization()(genus_features)
+    #genus_hidden = layers.Dense(512, activation='relu')(genus_features)
+    genus_output = layers.Dense(len(labels['genus']), activation='softmax', name='genus')(genus_features)
+
+    # Species Output
+    genus_features = layers.Dense(len(labels['species']), activation='relu')(genus_output)
+    shared_features_species = layers.Dense(len(labels['species']), activation='relu')(shared_layer)
+    species_features = layers.Multiply()([shared_features_species, genus_features])
+    species_features = layers.LayerNormalization()(species_features)
+    #species_hidden = layers.Dense(512, activation='relu')(species_features)
+    species_output = layers.Dense(len(labels['species']), activation='softmax', name='species')(species_features)
+
+    model = tf.keras.Model(
+        inputs, 
+        [family_output, genus_output, species_output],
+        name = "PhorcysV10"
     )
     
     return model
@@ -878,7 +976,7 @@ if __name__ in "__main__":
     
     # Dataset
     SETUP = {
-        "class_samples_threshold": 99,
+        "class_samples_threshold": 49,
         "test_size": .15,
         "validation_size": .15,
         "batch_size": 128,
@@ -910,11 +1008,13 @@ if __name__ in "__main__":
         },   
     }
     
-    df_lab = image_directory_to_pandas("/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/fish_functions/Species_v03")
-    df_web = image_directory_to_pandas("/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/web/Species_v01")
-    df_inatlist = image_directory_to_pandas("/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/inaturalist/Species_v02")
+    #df_lab = image_directory_to_pandas("/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/fish_functions/Species_v03")
+    #df_web = image_directory_to_pandas("/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/web/Species_v01")
+    #df_inatlist = image_directory_to_pandas("/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/inaturalist/Species_v02")
 
-    df = pd.concat([df_lab, df_web, df_inatlist], ignore_index=True, axis=0)
+    df = image_directory_to_pandas("/Users/leonardo/Documents/Projects/cryptovision/data/processed/cv_images_dataset")
+    
+    #df = pd.concat([df_lab, df_web, df_inatlist], ignore_index=True, axis=0)
 
     # find in the species column the values with lass than 50 occurences
     counts = df['species'].value_counts()
@@ -948,6 +1048,9 @@ if __name__ in "__main__":
     resnet = ResNet50V2(include_top=False, weights='imagenet', input_shape=SETUP['image_shape'])
     resnet.trainable = False
     
+    resnet101 = ResNet101V2(include_top=False, weights='imagenet', input_shape=SETUP['image_shape'])
+    resnet101.trainable = False
+    
     augmentation = tf.keras.Sequential(
         [
             layers.RandomFlip("horizontal"),
@@ -971,27 +1074,32 @@ if __name__ in "__main__":
     wandb.require("core")
 
     PROJ = "CryptoVision - Architecture Testing"
-    ARCH = "mhatt"
+    ARCH = "phorcys_v10"
     PTRAIN = "rn50v2"
     VERSION = datetime.datetime.now().strftime("%y.%m%d.%H%M")
     NICKNAME = f"cvis_{PTRAIN}_{SETUP['image_shape'][0]}_{ARCH}_v{VERSION}"
     SETUP['augmentation'] = True
     SETUP['shared_neurons'] = 2048
-    SETUP['dropout'] = 0.3
+    SETUP['dropout'] = 0.5
     #SETUP['shared_filters'] = 128
     #SETUP['hidden_neurons'] = [512, 1024, 2048]
 
 
     with wandb.init(project=PROJ, name=NICKNAME, config={**SETUP}) as run:
         
-        model = attention_model(
-            name=NICKNAME,
+        #model = shared_concat_modelv2(
+        #    name=NICKNAME,
+        #    labels=names,
+        #    pretrain=resnet,
+        #    shared_neurons=SETUP['shared_neurons'],
+        #    #shared_filters=SETUP['shared_filters'],
+        #    preprocess= resnet_preprocess,
+        #    augmentation=augmentation,
+        #    input_shape=SETUP['image_shape'],
+        #)
+        
+        model = phorcys_v09(
             labels=names,
-            pretrain=resnet,
-            shared_neurons=SETUP['shared_neurons'],
-            #shared_filters=SETUP['shared_filters'],
-            preprocess= resnet_preprocess,
-            augmentation=augmentation,
             input_shape=SETUP['image_shape'],
         )
         

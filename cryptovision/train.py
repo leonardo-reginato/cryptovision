@@ -222,11 +222,11 @@ def main(
         # Model Saving
         model.save(f"models/{model_name}.keras")
 
-        wandb.log_artifact(
-            f"models/{model_name}.keras",
-            name=model_name,
-            type="model",
-        )
+        #wandb.log_artifact(
+        #    f"models/{model_name}.keras",
+        #    name=model_name,
+        #    type="model",
+        #)
 
         logger.success(f"Model {model_name} trained and logged to wandb.")
 

@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 import tensorflow as tf
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -10,6 +11,85 @@ from tf_keras_vis.utils.scores import CategoricalScore
 from tf_keras_vis.saliency import Saliency
 from skimage.segmentation import mark_boundaries
 from lime.lime_image import LimeImageExplainer
+from tensorflow.keras.callbacks import Callback            # type: ignore
+
+from loguru import logger
+from colorama import Fore, Style 
+
+
+class TQDMProgressBar(Callback):
+    
+    def __init__(self):
+        super(TQDMProgressBar, self).__init__()
+        self.epoch_bar = None  # Ensure clean initialization
+    
+    def on_train_begin(self, logs=None):
+        # Close any lingering progress bars from previous runs
+        if self.epoch_bar:
+            self.epoch_bar.close()
+        self.epoch_bar = None
+    
+    def on_epoch_begin(self, epoch, logs=None):
+        # Close any existing progress bar to avoid overlaps
+        if self.epoch_bar:
+            self.epoch_bar.close()
+            
+        # Create a new progress bar for each epoch
+        self.epoch_bar = tqdm(total=self.params['steps'], 
+                              desc=f"Epoch {epoch+1}/{self.params['epochs']}", 
+                              unit="batch", 
+                              dynamic_ncols=True)
+    
+    def on_batch_end(self, batch, logs=None):
+        if self.epoch_bar:
+            self.epoch_bar.update(1)
+        
+        # Reduce updates to avoid clutter
+        if batch % 1 == 0 or batch == self.params['steps'] - 1:
+            self.epoch_bar.set_postfix({
+                'loss': f"{logs.get('loss', 0):.4f}",
+                'family_acc': f"{logs.get('family_accuracy', 0):.4f}",
+                'genus_acc': f"{logs.get('genus_accuracy', 0):.4f}",
+                'species_acc': f"{logs.get('species_accuracy', 0):.4f}",
+            })
+    
+    def colorize_accuracy(self, value):
+        if value < 0.75:
+            return Fore.RED + f"{value:.4f}" + Style.RESET_ALL
+        elif 0.75 <= value < 0.85:
+            return Fore.YELLOW + f"{value:.4f}" + Style.RESET_ALL
+        elif 0.85 <= value < 0.92:
+            return Fore.GREEN + f"{value:.4f}" + Style.RESET_ALL
+        else:
+            return Fore.MAGENTA + f"{value:.4f}" + Style.RESET_ALL
+    
+    def on_epoch_end(self, epoch, logs=None):
+        if self.epoch_bar:
+            self.epoch_bar.close()
+            self.epoch_bar = None  # Reset for the next epoch
+        
+        val_family_acc = logs.get('val_family_accuracy', 0)
+        val_genus_acc = logs.get('val_genus_accuracy', 0)
+        val_species_acc = logs.get('val_species_accuracy', 0)
+
+        val_family_acc_colored = self.colorize_accuracy(val_family_acc)
+        val_genus_acc_colored = self.colorize_accuracy(val_genus_acc)
+        val_species_acc_colored = self.colorize_accuracy(val_species_acc)
+
+        summary_message = (
+            f"Epoch {epoch+1} completed - Loss: {logs.get('loss', 0):.4f}, "
+            f"Val Family Accuracy: {val_family_acc_colored}, "
+            f"Val Genus Accuracy: {val_genus_acc_colored}, "
+            f"Val Species Accuracy: {val_species_acc_colored}"
+        )
+        logger.info(summary_message)
+    
+    def on_train_end(self, logs=None):
+        if self.epoch_bar:
+            self.epoch_bar.close()
+            self.epoch_bar = None
+
+
 
 def image_directory_to_pandas(image_path):
     """
