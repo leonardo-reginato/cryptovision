@@ -208,6 +208,17 @@ if __name__ == '__main__':
         "verbose": 0,
         "pretrain": "",
         "version": f"v{datetime.datetime.now().strftime('%y%m.%d.%H%M')}",
+        "project": 'PreTrain Model Selection',
+        "pretrain": "RN50v2",
+        "fine_tune": False,
+        "ds_version": "DS2501",
+        
+        "model": {
+            "function": models.basic_multioutput,
+            "args": {
+                "dropout_rate": 0.3,
+            },
+        },
         
         "image": {
             "size": (128, 128),
@@ -269,6 +280,7 @@ if __name__ == '__main__':
             "layers": 25,
             "lr": 1e-5,
             "pretrain_layer": "resnet50v2",
+            "patience": 7
         },
     }
     
@@ -280,12 +292,6 @@ if __name__ == '__main__':
         "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/inaturalist/Species_v02")
     
     df = pd.concat([df_lab, df_web, df_inatlist], ignore_index=True, axis=0)
-    
-    #df_old = image_directory_to_pandas("/Users/leonardo/Documents/Projects/cryptovision/data/processed/cv_images_dataset")
-    
-    # New Dataset just using the old species
-    #species_old = df_old['species'].unique().tolist()
-    #df = df[df['species'].isin(species_old)]
     
     counts = df['species'].value_counts()
     df = df[df['species'].isin(counts[counts > SETUP['dataset']['class_samples_threshold']].index)]
@@ -325,10 +331,62 @@ if __name__ == '__main__':
     train_ds = train_ds.cache().shuffle(buffer_size=1000, seed=SEED).prefetch(buffer_size=tf.data.AUTOTUNE)
     val_ds = val_ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
     
-    resnet50 = keras_apps.ResNet50V2(
-        include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
-    )
-    resnet50.trainable = False
+    pretrain_models = {
+        'RN50v2': {
+            'model': keras_apps.ResNet50V2(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.resnet_v2.preprocess_input
+        },
+        'RN101v2': {
+            'model': keras_apps.ResNet101V2(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.resnet_v2.preprocess_input
+        },
+        'RN152v2': {
+            'model': keras_apps.ResNet152V2(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.resnet_v2.preprocess_input
+        },
+        'EFv2b0': {
+            'model': keras_apps.EfficientNetV2B0(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.efficientnet_v2.preprocess_input
+        },
+        'EFv2b1': {
+            'model': keras_apps.EfficientNetV2B1(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.efficientnet_v2.preprocess_input
+        },
+        'EFv2b3': {
+            'model': keras_apps.EfficientNetV2B2(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.efficientnet_v2.preprocess_input
+        },
+        'VGG16': {
+            'model': keras_apps.VGG16(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.vgg16.preprocess_input
+        },
+        'VGG19': {
+            'model': keras_apps.VGG19(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.vgg19.preprocess_input
+        },
+        'IncRNv2': {
+            'model': keras_apps.InceptionResNetV2(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.inception_resnet_v2.preprocess_input
+        },
+    }
 
     augmentation = tf.keras.Sequential(
         [
@@ -344,33 +402,22 @@ if __name__ == '__main__':
         name='augmentation'
     )
     
-    PROJ = "CryptoVision - Architecture Testing"
-    ARCH = "hidden_based"
-    PTRAIN = "RN50V2"
-    NICKNAME = f"cvis_{ARCH}_{PTRAIN}_{SETUP['version']}"
-    FINETUNE = True
+    NICKNAME = f"{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
     
-    with wandb.init(project=PROJ, name=NICKNAME, config={**SETUP}) as run:
+    with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}) as run:
         
-        model = models.hidden_based(
-            pretrain=resnet50,
-            preprocess=keras_apps.resnet_v2.preprocess_input,
-            input_shape=SETUP['image']['shape'],
-            augmentation=augmentation,
-            outputs_size=[
-                len(names['family']), 
-                len(names['genus']), 
+        model = SETUP['model']['function'](
+            pretrain = pretrain_models[SETUP['pretrain']]['model'],
+            preprocess = pretrain_models[SETUP['pretrain']]['preprocess'],
+            augmentation = augmentation,
+            dropout_rate = SETUP['model']['args']['dropout_rate'],
+            input_shape = SETUP['image']['shape'],
+            outputs_size = [
+                len(names['family']),
+                len(names['genus']),
                 len(names['species'])
-            ],
+            ]
         )
-        
-        #model = basic_model(
-        #    name=NICKNAME,
-        #    labels=names,
-        #    pretrain=resnet50,
-        #    preprocess=augmentation,
-        #    input_shape=SETUP['image']['shape'],
-        #)
         
         logger.info(model.summary(show_trainable=True))
         
@@ -379,6 +426,10 @@ if __name__ == '__main__':
             loss=SETUP['compile']['loss'],
             metrics=SETUP['compile']['metrics'],
         )
+        
+        os.makedirs(f"models/{NICKNAME}", exist_ok=True)
+        
+        model.save(f"models/{NICKNAME}/model_untrained.keras")
         
         wandb_logger = WandbMetricsLogger()
         
@@ -396,16 +447,12 @@ if __name__ == '__main__':
         )
         
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            filepath=f"models/{NICKNAME}.keras",
+            filepath=f"models/{NICKNAME}/model_trained.keras",
             monitor=SETUP['checkpoint']["monitor"], 
             save_best_only=SETUP['checkpoint']['save_best_only'],  
             mode=SETUP['checkpoint']['mode'],  
             verbose=0  
         )
-        
-        #save_dir = "models/saliency_maps_models"
-        #save_epochs = [1, 5, 10, 15, 20]
-        #save_callback = SaveModelAtEpochs(save_dir=save_dir, save_epochs=save_epochs)
         
         history = model.fit(
             train_ds,
@@ -421,7 +468,7 @@ if __name__ == '__main__':
             wandb.log({f"test/{name}": value})
             logger.info(f"Test {name}: {value:.3f}")
         
-        if FINETUNE:
+        if SETUP['fine_tune']:
             logger.info("Fine-tuning the model...")
             
             pretrain = model.layers[2]
@@ -439,7 +486,7 @@ if __name__ == '__main__':
             
             early_stopping = tf.keras.callbacks.EarlyStopping(
                 monitor=SETUP['early_stop']["monitor"],
-                patience=7,
+                patience=SETUP['fine_tune']['patience'],
                 restore_best_weights=SETUP['early_stop']['restore_best_weights'],
             )
             
@@ -459,6 +506,8 @@ if __name__ == '__main__':
             for name, value in test_results.items():
                 wandb.log({f"ftun_test/{name}": value})
                 logger.info(f"Fine Tuned Test {name}: {value:.3f}")
+            
+            model.save(f"models/{NICKNAME}/model_fine_tuned.keras")
             
         logger.success(f"Model {NICKNAME} trained and logged to wandb.")
         

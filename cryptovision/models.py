@@ -28,15 +28,18 @@ for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 
 
-def multioutput_basic(
+def basic_multioutput(
     pretrain, 
     preprocess, 
     input_shape=(224, 224, 3), 
     outputs_size=[10, 20, 30], 
     dropout_rate=0.3, 
     name=None, 
-    augmentation=None
+    augmentation=None,
+    pretrain_trainable = False,
 ):
+    
+    pretrain.trainable = pretrain_trainable
     
     inputs = layers.Input(shape=input_shape, name='input_layer')
     x = augmentation(inputs) if augmentation else inputs
