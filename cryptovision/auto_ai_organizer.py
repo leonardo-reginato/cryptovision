@@ -103,8 +103,8 @@ if __name__ == "__main__":
     # Organize images
     organize_images_by_predictions(
         ai=ai,
-        image_directory="/Volumes/T7_shield/CryptoVision/Data/others/hemingson_photos",
-        output_directory="/Volumes/T7_shield/CryptoVision/Data/others/organized_v01",
+        image_directory="/Volumes/T7_shield/CryptoVision/Data/others/hemingson_photos/selected",
+        output_directory="/Volumes/T7_shield/CryptoVision/Data/others/hemingson_photos/cv_organized",
         confidence_thresholds={"family": 0.6, "genus": 0.7, "species": 0.8},
         taxonomy_directory=taxonomy_dir
-)
+    )

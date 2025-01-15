@@ -206,11 +206,10 @@ if __name__ == '__main__':
     SETUP = {
         "seed": SEED,
         "verbose": 0,
-        "pretrain": "",
         "version": f"v{datetime.datetime.now().strftime('%y%m.%d.%H%M')}",
         "project": 'PreTrain Model Selection',
-        "pretrain": "RN50v2",
-        "fine_tune": False,
+        "pretrain": "EFv2S",
+        "finetune": False,
         "ds_version": "DS2501",
         
         "model": {
@@ -386,6 +385,12 @@ if __name__ == '__main__':
             ),
             'preprocess': keras_apps.inception_resnet_v2.preprocess_input
         },
+        'EFv2S': {
+            'model': keras_apps.EfficientNetV2S(
+                include_top=False, weights='imagenet', input_shape=SETUP['image']['shape']
+            ),
+            'preprocess': keras_apps.efficientnet_v2.preprocess_input    
+        },
     }
 
     augmentation = tf.keras.Sequential(
@@ -468,7 +473,7 @@ if __name__ == '__main__':
             wandb.log({f"test/{name}": value})
             logger.info(f"Test {name}: {value:.3f}")
         
-        if SETUP['fine_tune']:
+        if SETUP['finetune']:
             logger.info("Fine-tuning the model...")
             
             pretrain = model.layers[2]
