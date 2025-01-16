@@ -207,16 +207,16 @@ if __name__ == '__main__':
         "seed": SEED,
         "verbose": 0,
         "version": f"v{datetime.datetime.now().strftime('%y%m.%d.%H%M')}",
-        "project": 'PreTrain Model Selection',
-        "pretrain": "EFv2S",
+        "project": 'DataSet Comparison',
+        "pretrain": "RN152v2",
         "finetune": False,
-        "ds_version": "DS2501",
         
         "model": {
             "function": models.basic_multioutput,
             "args": {
                 "dropout_rate": 0.3,
             },
+            "save": False,
         },
         
         "image": {
@@ -225,11 +225,13 @@ if __name__ == '__main__':
         },
        
         "dataset": {
+            "version": "v25.01.02",
             "test_size": .15,
             "validation_size": .15,
             "batch_size": 128,
             "class_samples_threshold": 99,
             "stratify_by": 'folder_label',
+            "sources": ['fish_functions_v02','web', 'inaturalist_v02','CHRIS','LIRS23','LAU-LI'],
         },
         
         "compile": {
@@ -289,8 +291,17 @@ if __name__ == '__main__':
         "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/web/Species_v01")
     df_inatlist = image_directory_to_pandas(
         "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/inaturalist/Species_v02")
+    df_chris = image_directory_to_pandas(
+        "/Volumes/T7_shield/CryptoVision/Data/others/hemingson_photos/others_organized/Species"
+    )
+    df_chris_lirs = image_directory_to_pandas(
+        "/Volumes/T7_shield/CryptoVision/Data/others/hemingson_photos/LIRS23_organized/Species"
+    )
+    df_ll = image_directory_to_pandas(
+        "/Volumes/T7_shield/CryptoVision/Data/others/jeannot_photos/cv_organized/03_Species"
+    )
     
-    df = pd.concat([df_lab, df_web, df_inatlist], ignore_index=True, axis=0)
+    df = pd.concat([df_lab, df_web, df_inatlist, df_chris, df_chris_lirs, df_ll], ignore_index=True, axis=0)
     
     counts = df['species'].value_counts()
     df = df[df['species'].isin(counts[counts > SETUP['dataset']['class_samples_threshold']].index)]
@@ -434,7 +445,8 @@ if __name__ == '__main__':
         
         os.makedirs(f"models/{NICKNAME}", exist_ok=True)
         
-        model.save(f"models/{NICKNAME}/model_untrained.keras")
+        if SETUP['model']['save']:
+            model.save(f"models/{NICKNAME}/model_untrained.keras")
         
         wandb_logger = WandbMetricsLogger()
         
@@ -454,7 +466,7 @@ if __name__ == '__main__':
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
             filepath=f"models/{NICKNAME}/model_trained.keras",
             monitor=SETUP['checkpoint']["monitor"], 
-            save_best_only=SETUP['checkpoint']['save_best_only'],  
+            save_best_only=SETUP['checkpoint']['save_best_only'] if SETUP['model']['save'] else False,  
             mode=SETUP['checkpoint']['mode'],  
             verbose=0  
         )
@@ -512,7 +524,8 @@ if __name__ == '__main__':
                 wandb.log({f"ftun_test/{name}": value})
                 logger.info(f"Fine Tuned Test {name}: {value:.3f}")
             
-            model.save(f"models/{NICKNAME}/model_fine_tuned.keras")
+            if SETUP['model']['save']:
+                model.save(f"models/{NICKNAME}/model_fine_tuned.keras")
             
         logger.success(f"Model {NICKNAME} trained and logged to wandb.")
         
