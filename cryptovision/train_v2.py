@@ -225,13 +225,13 @@ if __name__ == '__main__':
         },
        
         "dataset": {
-            "version": "v25.01.02",
+            "version": "v25.01.03",
             "test_size": .15,
             "validation_size": .15,
             "batch_size": 128,
             "class_samples_threshold": 99,
             "stratify_by": 'folder_label',
-            "sources": ['fish_functions_v02','web', 'inaturalist_v02','CHRIS','LIRS23','LAU-LI'],
+            "sources": ['fish_functions_v02','web', 'inaturalist_v03','CHRIS','LIRS23','LAU-LI'],
         },
         
         "compile": {
@@ -290,7 +290,8 @@ if __name__ == '__main__':
     df_web = image_directory_to_pandas(
         "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/web/Species_v01")
     df_inatlist = image_directory_to_pandas(
-        "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/inaturalist/Species_v02")
+        #"/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/inaturalist/Species_v02")
+        "/Volumes/T7_shield/CryptoVision/Data/inaturalist/Species_v03")
     df_chris = image_directory_to_pandas(
         "/Volumes/T7_shield/CryptoVision/Data/others/hemingson_photos/others_organized/Species"
     )

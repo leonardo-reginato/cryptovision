@@ -1,4 +1,5 @@
 import os
+import requests
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -728,4 +729,92 @@ class CryptoVisionAI:
         plt.title("LIME Explanation")
         plt.axis('off')
         plt.show()
+
+
+def fetch_inaturalist_observations(taxon_name, rank, per_page=30, page=1):
+    """
+    Fetch observations for a given taxon name and rank from iNaturalist API.
+    
+    Args:
+        taxon_name (str): Name of the taxon (family, genus, or species).
+        rank (str): The rank of the taxon ('family', 'genus', 'species').
+        per_page (int): Number of observations to fetch per page.
+        page (int): Page number to fetch.
+
+    Returns:
+        dict: JSON response from the API containing observations.
+    """
+    url = "https://api.inaturalist.org/v1/observations"
+    params = {
+        "taxon_name": taxon_name,
+        "rank": rank,
+        "per_page": per_page,
+        "page": page,
+        "photos": True
+    }
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error fetching data from iNaturalist: {response.status_code}")
+        return None
+
+def download_image(url, save_path):
+    """
+    Download an image from a URL and save it to the specified path.
+
+    Args:
+        url (str): URL of the image to download.
+        save_path (str): Local path to save the image.
+    """
+    try:
+        response = requests.get(url, stream=True)
+        if response.status_code == 200:
+            with open(save_path, 'wb') as file:
+                for chunk in response.iter_content(1024):
+                    file.write(chunk)
+            print(f"Image downloaded: {save_path}")
+        else:
+            print(f"Failed to download image from {url} (Status code: {response.status_code})")
+    except Exception as e:
+        print(f"Error downloading image: {e}")
+
+def download_taxon_images(taxon_name, rank, download_dir, max_images=10):
+    """
+    Download images of a specific taxon (family, genus, or species) from iNaturalist.
+
+    Args:
+        taxon_name (str): Name of the taxon.
+        rank (str): Rank of the taxon ('family', 'genus', 'species').
+        download_dir (str): Directory to save the downloaded images.
+        max_images (int): Maximum number of images to download.
+    """
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+
+    page = 1
+    downloaded_count = 0
+    while downloaded_count < max_images:
+        observations = fetch_inaturalist_observations(taxon_name, rank, page=page)
+        if not observations or not observations.get('results'):
+            print("No more observations found.")
+            break
+        
+        for result in observations['results']:
+            if downloaded_count >= max_images:
+                break
+            for photo in result.get('photos', []):
+                image_url = photo.get('url')
+                if image_url:
+                    # Construct the URL for the original-sized image
+                    original_url = image_url.replace("square", "original")
+                    image_id = photo.get('id')
+                    extension = original_url.split('.')[-1]
+                    save_path = os.path.join(download_dir, f"{taxon_name}_{image_id}.{extension}")
+                    download_image(original_url, save_path)
+                    downloaded_count += 1
+
+        page += 1
+
+    print(f"Downloaded {downloaded_count} images for taxon '{taxon_name}' with rank '{rank}'.")
 
