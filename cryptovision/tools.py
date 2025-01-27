@@ -92,7 +92,7 @@ class TQDMProgressBar(Callback):
 
 
 
-def image_directory_to_pandas(image_path):
+def image_directory_to_pandas(image_path, source=None):
     """
     Create a pandas DataFrame with image paths and taxonomic labels extracted from a directory structure.
 
@@ -145,8 +145,12 @@ def image_directory_to_pandas(image_path):
             "Error splitting folder labels. Ensure that your folder structure follows 'family_genus_species' format."
         ) from e
 
-    # Return the dataframe with specified columns
-    return df[['image_path', 'folder_label', 'family', 'genus', 'species']]
+    if source is not None:
+        df['source'] = source
+        return df[['image_path', 'source', 'folder_label', 'family', 'genus', 'species']]
+
+    else:
+        return df[['image_path', 'folder_label', 'family', 'genus', 'species']]
 
 
 def split_image_dataframe(df, test_size=0.2, val_size=0.1, random_state=42, stratify_by='folder_label'):

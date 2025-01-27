@@ -122,6 +122,7 @@ def hidden_based(pretrain, preprocess, outputs_size=[10, 20, 30], name=None, aug
         x = layers.Dropout(dropout)(x)
         return x
     
+    pretrain.trainable = False
     
     inputs = layers.Input(shape=input_shape, name='input')
     x = augmentation(inputs) if augmentation else inputs
@@ -149,7 +150,59 @@ def hidden_based(pretrain, preprocess, outputs_size=[10, 20, 30], name=None, aug
     )
     
     return model    
+
+def conv_based(pretrain, preprocess, outputs_size=[10, 20, 30], name=None, augmentation=None, input_shape=(224, 224, 3)):
+    
+    pretrain.trainable = False
+    
+    inputs = layers.Input(shape=input_shape, name='input')
+    x = augmentation(inputs) if augmentation else inputs
+    x = preprocess(x)
+    x = pretrain(x, training=False)
+    
+    # Feature Extracion from Pretrained Model
+    #features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(x)
+    
+    # Conv2D Block
+    x = layers.Conv2D(32, (3, 3), activation='relu', padding='same')(x)
+    x = layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    x = layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = layers.Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    x = layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = layers.Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+    
+    x = layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = layers.Flatten()(x)
+    
+    # Family Output
+    family_hidden = layers.Dense(2048, activation='relu')(x)
+    family_output = layers.Dense(outputs_size[0], activation='softmax', name='family')(family_hidden)
+    
+    # Genus Output
+    genus_hidden = layers.Dense(1024, activation='relu')(family_hidden)
+    genus_output = layers.Dense(outputs_size[1], activation='softmax', name='genus')(genus_hidden)
+    
+    # Species Output
+    species_hidden = layers.Dense(1024, activation='relu')(genus_hidden)
+    species_output = layers.Dense(outputs_size[2], activation='softmax', name='species')(species_hidden)
+    
+    model = tf.keras.Model(inputs, [family_output, genus_output, species_output], name=name)
+    
+    return model
     
 def dummy():
     pass
 
+
+
+if __name__ == "__main__":
+    
+    pretrain = keras_apps.ResNet50V2(include_top=False, weights='imagenet', input_shape=(224, 224, 3))
+    preprocess = keras_apps.resnet_v2.preprocess_input
+    outputs_size = [10, 20, 30]
+    model = conv_based(pretrain, preprocess, outputs_size)
+    
+    print(model.summary())

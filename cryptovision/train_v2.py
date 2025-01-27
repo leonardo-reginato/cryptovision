@@ -220,18 +220,18 @@ if __name__ == '__main__':
         },
         
         "image": {
-            "size": (128, 128),
-            "shape": (128, 128, 3),
+            "size": (224, 224),
+            "shape": (224, 224, 3),
         },
        
         "dataset": {
-            "version": "v25.01.03",
+            "version": "v2.1.0",
             "test_size": .15,
             "validation_size": .15,
             "batch_size": 128,
-            "class_samples_threshold": 99,
+            "class_samples_threshold": 50,
             "stratify_by": 'folder_label',
-            "sources": ['fish_functions_v02','web', 'inaturalist_v03','CHRIS','LIRS23','LAU-LI'],
+            "sources": ['fish_functions_v02','web', 'inaturalist_v03',],
         },
         
         "compile": {
@@ -285,24 +285,37 @@ if __name__ == '__main__':
         },
     }
     
+    old_df = image_directory_to_pandas(
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v1.0.0'
+    )
+
+    names = {
+            'family': sorted(old_df['family'].unique()),
+            'genus': sorted(old_df['genus'].unique()),
+            'species': sorted(old_df['species'].unique()),
+        }
+    
     df_lab = image_directory_to_pandas(
-        "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/fish_functions/Species_v03")
+        "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226", 'lab')
     df_web = image_directory_to_pandas(
-        "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/web/Species_v01")
+        "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Web/Species/v250117", 'web')
     df_inatlist = image_directory_to_pandas(
-        #"/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/inaturalist/Species_v02")
-        "/Volumes/T7_shield/CryptoVision/Data/inaturalist/Species_v03")
-    df_chris = image_directory_to_pandas(
-        "/Volumes/T7_shield/CryptoVision/Data/others/hemingson_photos/others_organized/Species"
-    )
-    df_chris_lirs = image_directory_to_pandas(
-        "/Volumes/T7_shield/CryptoVision/Data/others/hemingson_photos/LIRS23_organized/Species"
-    )
-    df_ll = image_directory_to_pandas(
-        "/Volumes/T7_shield/CryptoVision/Data/others/jeannot_photos/cv_organized/03_Species"
+        "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/inaturalist/Species/v250116", 'inatlist')
+    
+    df = pd.concat(
+        [
+            df_lab, 
+            df_web, 
+            df_inatlist, 
+        ], 
+        ignore_index=True, 
+        axis=0
     )
     
-    df = pd.concat([df_lab, df_web, df_inatlist, df_chris, df_chris_lirs, df_ll], ignore_index=True, axis=0)
+    df = df[df['family'].isin(names['family'])]
+    df = df[df['genus'].isin(names['genus'])]
+    df = df[df['species'].isin(names['species'])]
+    
     
     counts = df['species'].value_counts()
     df = df[df['species'].isin(counts[counts > SETUP['dataset']['class_samples_threshold']].index)]
@@ -315,11 +328,11 @@ if __name__ == '__main__':
         random_state=SEED
     )
 
-    names = {
-        'family': sorted(df['family'].unique()),
-        'genus': sorted(df['genus'].unique()),
-        'species': sorted(df['species'].unique()),
-    }
+    #names = {
+    #    'family': sorted(df['family'].unique()),
+    #    'genus': sorted(df['genus'].unique()),
+    #    'species': sorted(df['species'].unique()),
+    #}
 
     train_ds, _, _, _ = tf_dataset_from_pandas(
         train_df, 
@@ -427,7 +440,7 @@ if __name__ == '__main__':
             pretrain = pretrain_models[SETUP['pretrain']]['model'],
             preprocess = pretrain_models[SETUP['pretrain']]['preprocess'],
             augmentation = augmentation,
-            dropout_rate = SETUP['model']['args']['dropout_rate'],
+            #dropout_rate = SETUP['model']['args']['dropout_rate'],
             input_shape = SETUP['image']['shape'],
             outputs_size = [
                 len(names['family']),
