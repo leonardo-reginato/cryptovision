@@ -209,10 +209,10 @@ if __name__ == '__main__':
         "version": f"v{datetime.datetime.now().strftime('%y%m.%d.%H%M')}",
         "project": 'DataSet Comparison',
         "pretrain": "RN152v2",
-        "finetune": False,
+        "finetune": True,
         
         "model": {
-            "function": models.basic_multioutput,
+            "function": models.hidden_based,
             "args": {
                 "dropout_rate": 0.3,
             },
@@ -220,12 +220,12 @@ if __name__ == '__main__':
         },
         
         "image": {
-            "size": (224, 224),
-            "shape": (224, 224, 3),
+            "size": (299, 299),
+            "shape": (299, 299, 3),
         },
        
         "dataset": {
-            "version": "v2.1.0",
+            "version": "v2.0.0",
             "test_size": .15,
             "validation_size": .15,
             "batch_size": 128,
@@ -285,40 +285,43 @@ if __name__ == '__main__':
         },
     }
     
-    old_df = image_directory_to_pandas(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v1.0.0'
-    )
+    #old_df = image_directory_to_pandas(
+    #    '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v1.0.0'
+    #)
 
-    names = {
-            'family': sorted(old_df['family'].unique()),
-            'genus': sorted(old_df['genus'].unique()),
-            'species': sorted(old_df['species'].unique()),
-        }
+    #names = {
+    #        'family': sorted(old_df['family'].unique()),
+    #        'genus': sorted(old_df['genus'].unique()),
+    #        'species': sorted(old_df['species'].unique()),
+    #    }
+    #
+    #df_lab = image_directory_to_pandas(
+    #    "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226", 'lab')
+    #df_web = image_directory_to_pandas(
+    #    "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Web/Species/v250117", 'web')
+    #df_inatlist = image_directory_to_pandas(
+    #    "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/inaturalist/Species/v250116", 'inatlist')
+    #
+    #df = pd.concat(
+    #    [
+    #        df_lab, 
+    #        df_web, 
+    #        df_inatlist, 
+    #    ], 
+    #    ignore_index=True, 
+    #    axis=0
+    #)
+    #
+    #df = df[df['family'].isin(names['family'])]
+    #df = df[df['genus'].isin(names['genus'])]
+    #df = df[df['species'].isin(names['species'])]
     
-    df_lab = image_directory_to_pandas(
-        "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226", 'lab')
-    df_web = image_directory_to_pandas(
-        "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Web/Species/v250117", 'web')
-    df_inatlist = image_directory_to_pandas(
-        "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/inaturalist/Species/v250116", 'inatlist')
-    
-    df = pd.concat(
-        [
-            df_lab, 
-            df_web, 
-            df_inatlist, 
-        ], 
-        ignore_index=True, 
-        axis=0
+    df = image_directory_to_pandas(
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v2.0.0/images'
     )
-    
-    df = df[df['family'].isin(names['family'])]
-    df = df[df['genus'].isin(names['genus'])]
-    df = df[df['species'].isin(names['species'])]
-    
     
     counts = df['species'].value_counts()
-    df = df[df['species'].isin(counts[counts > SETUP['dataset']['class_samples_threshold']].index)]
+    df = df[df['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
 
     train_df, val_df, test_df = split_image_dataframe(
         df, 
@@ -328,11 +331,11 @@ if __name__ == '__main__':
         random_state=SEED
     )
 
-    #names = {
-    #    'family': sorted(df['family'].unique()),
-    #    'genus': sorted(df['genus'].unique()),
-    #    'species': sorted(df['species'].unique()),
-    #}
+    names = {
+        'family': sorted(df['family'].unique()),
+        'genus': sorted(df['genus'].unique()),
+        'species': sorted(df['species'].unique()),
+    }
 
     train_ds, _, _, _ = tf_dataset_from_pandas(
         train_df, 
