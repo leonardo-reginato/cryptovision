@@ -209,10 +209,10 @@ if __name__ == '__main__':
         "version": f"v{datetime.datetime.now().strftime('%y%m.%d.%H%M')}",
         "project": 'DataSet Comparison',
         "pretrain": "RN152v2",
-        "finetune": True,
+        "finetune": False,
         
         "model": {
-            "function": models.hidden_based,
+            "function": models.basic_multioutput,
             "args": {
                 "dropout_rate": 0.3,
             },
@@ -220,8 +220,8 @@ if __name__ == '__main__':
         },
         
         "image": {
-            "size": (299, 299),
-            "shape": (299, 299, 3),
+            "size": (128, 128),
+            "shape": (128, 128, 3),
         },
        
         "dataset": {
@@ -229,7 +229,7 @@ if __name__ == '__main__':
             "test_size": .15,
             "validation_size": .15,
             "batch_size": 128,
-            "class_samples_threshold": 50,
+            "class_samples_threshold": 99,
             "stratify_by": 'folder_label',
             "sources": ['fish_functions_v02','web', 'inaturalist_v03',],
         },
@@ -316,9 +316,28 @@ if __name__ == '__main__':
     #df = df[df['genus'].isin(names['genus'])]
     #df = df[df['species'].isin(names['species'])]
     
-    df = image_directory_to_pandas(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v2.0.0/images'
+    df_lab = image_directory_to_pandas(
+        #'/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v250106'
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226/images' # no background
     )
+    
+    df_inat_full = image_directory_to_pandas(
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250116/images'
+    )
+    
+    df_inat_clean = image_directory_to_pandas(
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250128/images'
+    )
+    
+    species_list = df_inat_clean['species'].unique()
+    
+    df_full = pd.concat([df_lab, df_inat_full], ignore_index=True, axis=0)
+    df_clean = pd.concat([df_lab, df_inat_clean], ignore_index=True, axis=0)
+    
+    df_full = df_full[df_full['species'].isin(species_list)]
+    df_clean = df_clean[df_clean['species'].isin(species_list)]
+    
+    df = df_clean.copy()
     
     counts = df['species'].value_counts()
     df = df[df['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
@@ -357,6 +376,9 @@ if __name__ == '__main__':
     
     train_ds = train_ds.cache().shuffle(buffer_size=1000, seed=SEED).prefetch(buffer_size=tf.data.AUTOTUNE)
     val_ds = val_ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
+    
+    logger.info(f"Dataset sizes:\n\tTrain: {train_df.shape[0]}\n\tVal: {val_df.shape[0]}\n\tTest: {test_df.shape[0]}")
+    logger.info(f"Number of classes:\n\tFamily: {len(names['family'])}\n\tGenus: {len(names['genus'])}\n\tSpecies: {len(names['species'])}")
     
     pretrain_models = {
         'RN50v2': {
@@ -436,6 +458,7 @@ if __name__ == '__main__':
     )
     
     NICKNAME = f"{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
+    NICKNAME = "InatLabClean2 - WithBG"
     
     with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}) as run:
         
