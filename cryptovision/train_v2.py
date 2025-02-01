@@ -229,7 +229,7 @@ if __name__ == '__main__':
             "test_size": .15,
             "validation_size": .15,
             "batch_size": 128,
-            "class_samples_threshold": 99,
+            "class_samples_threshold": 50,
             "stratify_by": 'folder_label',
             "sources": ['fish_functions_v02','web', 'inaturalist_v03',],
         },
@@ -285,59 +285,59 @@ if __name__ == '__main__':
         },
     }
     
-    #old_df = image_directory_to_pandas(
-    #    '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v1.0.0'
-    #)
+    # 1. Load Dataset
+    # Version 1
+    df_v1 = image_directory_to_pandas(
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v1.0.0/images'
+    )
 
-    #names = {
-    #        'family': sorted(old_df['family'].unique()),
-    #        'genus': sorted(old_df['genus'].unique()),
-    #        'species': sorted(old_df['species'].unique()),
-    #    }
-    #
-    #df_lab = image_directory_to_pandas(
-    #    "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226", 'lab')
-    #df_web = image_directory_to_pandas(
-    #    "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Web/Species/v250117", 'web')
-    #df_inatlist = image_directory_to_pandas(
-    #    "/Volumes/T7_shield/CryptoVision/Data/Images/Sources/inaturalist/Species/v250116", 'inatlist')
-    #
-    #df = pd.concat(
-    #    [
-    #        df_lab, 
-    #        df_web, 
-    #        df_inatlist, 
-    #    ], 
-    #    ignore_index=True, 
-    #    axis=0
-    #)
-    #
-    #df = df[df['family'].isin(names['family'])]
-    #df = df[df['genus'].isin(names['genus'])]
-    #df = df[df['species'].isin(names['species'])]
-    
+    # With LAB images
     df_lab = image_directory_to_pandas(
-        #'/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v250106'
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226/images' # no background
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226/images', 'lab'
+    )
+
+    # With InaturaList images
+    df_inat = image_directory_to_pandas(
+        #'/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250116/images', 'inat'
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250128/images', 'inat'
+    )
+
+    # 2. Create source column for V1 dataset
+    def get_prefix(path):
+        filename = os.path.basename(path)
+        return filename[:3]
+
+    df_v1['source'] = df_v1['image_path'].apply(get_prefix)
+
+    # 3. Concatenate datasets
+    df_new = pd.concat(
+        [
+            df_v1,
+            df_lab,
+            df_inat,
+        ],
+        axis=0,
+        ignore_index=True
+    )
+
+    # 4. Filtrate image from sources lab and inat that is not Eviota albolineata, Nemateleotris magnifica, Acanthemblemaria aspera
+    sp_list = ['Eviota albolineata', 'Nemateleotris magnifica', 'Acanthemblemaria aspera']
+
+    df_sp = df_new[df_new['species'].isin(sp_list)]
+
+    df_new = df_new[~df_new['species'].isin(sp_list) & ~df_new['source'].isin(['lab', 'inat'])]
+
+    # 5. Final dataset
+    df_final = pd.concat(
+        [
+            df_new,
+            df_sp[df_sp['source'].isin(['lab', 'web', 'sjb', 'inat'])],
+        ],
+        axis=0,
+        ignore_index=True
     )
     
-    df_inat_full = image_directory_to_pandas(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250116/images'
-    )
-    
-    df_inat_clean = image_directory_to_pandas(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250128/images'
-    )
-    
-    species_list = df_inat_clean['species'].unique()
-    
-    df_full = pd.concat([df_lab, df_inat_full], ignore_index=True, axis=0)
-    df_clean = pd.concat([df_lab, df_inat_clean], ignore_index=True, axis=0)
-    
-    df_full = df_full[df_full['species'].isin(species_list)]
-    df_clean = df_clean[df_clean['species'].isin(species_list)]
-    
-    df = df_clean.copy()
+    df = df_final.copy()
     
     counts = df['species'].value_counts()
     df = df[df['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
@@ -458,9 +458,10 @@ if __name__ == '__main__':
     )
     
     NICKNAME = f"{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
-    NICKNAME = "InatLabClean2 - WithBG"
+    NICKNAME = "BasicModel128DS100_AllCleanPlus"
+    TAGS = [SETUP['pretrain']]
     
-    with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}) as run:
+    with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}, tags=TAGS) as run:
         
         model = SETUP['model']['function'](
             pretrain = pretrain_models[SETUP['pretrain']]['model'],
