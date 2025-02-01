@@ -7,7 +7,7 @@ import pandas as pd
 import tensorflow as tf
 from loguru import logger
 from wandb.integration.keras import WandbMetricsLogger
-
+from sklearn.model_selection import train_test_split
 from cryptovision.tools import (
     TQDMProgressBar, image_directory_to_pandas, 
     split_image_dataframe, tf_dataset_from_pandas
@@ -208,7 +208,7 @@ if __name__ == '__main__':
         "verbose": 0,
         "version": f"v{datetime.datetime.now().strftime('%y%m.%d.%H%M')}",
         "project": 'DataSet Comparison',
-        "pretrain": "RN152v2",
+        "pretrain": "RN50v2",
         "finetune": False,
         
         "model": {
@@ -229,7 +229,7 @@ if __name__ == '__main__':
             "test_size": .15,
             "validation_size": .15,
             "batch_size": 128,
-            "class_samples_threshold": 50,
+            "class_samples_threshold": 90,
             "stratify_by": 'folder_label',
             "sources": ['fish_functions_v02','web', 'inaturalist_v03',],
         },
@@ -285,62 +285,28 @@ if __name__ == '__main__':
         },
     }
     
-    # 1. Load Dataset
-    # Version 1
-    df_v1 = image_directory_to_pandas(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v1.0.0/images'
-    )
-
-    # With LAB images
-    df_lab = image_directory_to_pandas(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226/images', 'lab'
-    )
-
-    # With InaturaList images
-    df_inat = image_directory_to_pandas(
-        #'/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250116/images', 'inat'
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250128/images', 'inat'
-    )
-
-    # 2. Create source column for V1 dataset
-    def get_prefix(path):
-        filename = os.path.basename(path)
-        return filename[:3]
-
-    df_v1['source'] = df_v1['image_path'].apply(get_prefix)
-
-    # 3. Concatenate datasets
-    df_new = pd.concat(
-        [
-            df_v1,
-            df_lab,
-            df_inat,
-        ],
-        axis=0,
-        ignore_index=True
-    )
-
-    # 4. Filtrate image from sources lab and inat that is not Eviota albolineata, Nemateleotris magnifica, Acanthemblemaria aspera
-    sp_list = ['Eviota albolineata', 'Nemateleotris magnifica', 'Acanthemblemaria aspera']
-
-    df_sp = df_new[df_new['species'].isin(sp_list)]
-
-    df_new = df_new[~df_new['species'].isin(sp_list) & ~df_new['source'].isin(['lab', 'inat'])]
-
-    # 5. Final dataset
-    df_final = pd.concat(
-        [
-            df_new,
-            df_sp[df_sp['source'].isin(['lab', 'web', 'sjb', 'inat'])],
-        ],
-        axis=0,
-        ignore_index=True
+    df_lab = image_directory_to_pandas("/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226/images")
+    
+    counts = df_lab['species'].value_counts()
+    df_lab = df_lab[df_lab['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
+    #df_lab, _ = train_test_split(df_lab, test_size=0.3, random_state=42, stratify=df_lab['species'])
+    
+    df_web = image_directory_to_pandas("/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250128/images")
+    
+    counts = df_web['species'].value_counts()
+    df_web = df_web[df_web['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
+    #df_web, _ = train_test_split(df_web, test_size=0.3, random_state=42, stratify=df_web['species'])
+    
+    df_web = df_web[df_web['species'].isin(df_lab['species'].unique())]
+    
+    df = pd.concat(
+        [df_lab, df_web],
+        ignore_index=True,
+        axis=0
     )
     
-    df = df_final.copy()
-    
-    counts = df['species'].value_counts()
-    df = df[df['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
+    #counts = df['species'].value_counts()
+    #df = df[df['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
 
     train_df, val_df, test_df = split_image_dataframe(
         df, 
@@ -458,7 +424,7 @@ if __name__ == '__main__':
     )
     
     NICKNAME = f"{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
-    NICKNAME = "BasicModel128DS100_AllCleanPlus"
+    NICKNAME = "DataSet_WebPlus3"
     TAGS = [SETUP['pretrain']]
     
     with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}, tags=TAGS) as run:
