@@ -285,25 +285,19 @@ if __name__ == '__main__':
         },
     }
     
-    df_lab = image_directory_to_pandas("/Volumes/T7_shield/CryptoVision/Data/Images/Sources/Lab/SJB/Processed/Species/v241226/images")
-    
-    counts = df_lab['species'].value_counts()
-    df_lab = df_lab[df_lab['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
-    #df_lab, _ = train_test_split(df_lab, test_size=0.3, random_state=42, stratify=df_lab['species'])
-    
-    df_web = image_directory_to_pandas("/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250128/images")
-    
-    counts = df_web['species'].value_counts()
-    df_web = df_web[df_web['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
-    #df_web, _ = train_test_split(df_web, test_size=0.3, random_state=42, stratify=df_web['species'])
-    
-    df_web = df_web[df_web['species'].isin(df_lab['species'].unique())]
-    
-    df = pd.concat(
-        [df_lab, df_web],
-        ignore_index=True,
-        axis=0
+    df_inat = image_directory_to_pandas(
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250116/images'
     )
+
+    df_inat_clean = image_directory_to_pandas(
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250128/images'
+    )
+
+    species_list = df_inat_clean['species'].unique()
+
+    df_inat = df_inat[df_inat['species'].isin(species_list)]
+    
+    df = df_inat_clean.copy()
     
     #counts = df['species'].value_counts()
     #df = df[df['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
@@ -428,6 +422,11 @@ if __name__ == '__main__':
     TAGS = [SETUP['pretrain']]
     
     with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}, tags=TAGS) as run:
+        
+        logger.info(f"Dataset Size: Train {train_df.shape[0]} ({train_df.shape[0] / df.shape[0] * 100:.2f}%) - Val {val_df.shape[0]} ({val_df.shape[0] / df.shape[0] * 100:.2f}%) - Test {test_df.shape[0]} ({test_df.shape[0] / df.shape[0] * 100:.2f}%)")
+        logger.info(f"Levels Amount: Family {len(names['family'])} - Genus {len(names['genus'])} - Species {len(names['species'])}")
+        
+        logger.info(f"Model: {SETUP['model']['function'].__name__}")
         
         model = SETUP['model']['function'](
             pretrain = pretrain_models[SETUP['pretrain']]['model'],
