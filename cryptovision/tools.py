@@ -15,7 +15,15 @@ from lime.lime_image import LimeImageExplainer
 from tensorflow.keras.callbacks import Callback            # type: ignore
 
 from loguru import logger
-from colorama import Fore, Style 
+from colorama import Fore, Style
+from pathlib import Path 
+from PIL import Image, ImageStat, ExifTags
+import imagehash
+import numpy as np
+import cv2
+from concurrent.futures import ThreadPoolExecutor
+import pandas as pd
+import math
 
 
 class TQDMProgressBar(Callback):
@@ -91,69 +99,45 @@ class TQDMProgressBar(Callback):
             self.epoch_bar = None
 
 
-
-def image_directory_to_pandas(image_path, source=None):
+def image_dir_pandas(path: Path, source: str=None):
     """
-    Create a pandas DataFrame with image paths and taxonomic labels extracted from a directory structure.
-
+    Loads image paths and their taxonomic labels into a Pandas DataFrame.
+    
     Parameters:
-    ----------
-    image_path : str
-        The root directory containing subfolders with images.
-
+    - image_dir (str): Root directory containing image subfolders.
+    - source (str, optional): Source identifier to include in the DataFrame.
+    
     Returns:
-    -------
-    pandas.DataFrame
-        A DataFrame containing image paths and label information. Columns include:
-        - 'path': The full path to the image.
-        - 'folder_label': The folder name, representing the original label (format: 'family_genus_species').
-        - 'family': Extracted family name from the folder label.
-        - 'genus': Extracted genus name from the folder label.
-        - 'species': Combination of genus and species names (e.g., 'genus species').
-
-    Raises:
-    ------
-    ValueError:
-        If the folder label format does not match the expected 'family_genus_species' format.
+    - pd.DataFrame: DataFrame containing image paths and taxonomic labels.
     """
-    labels = []
-    paths = []
-
-    # Walk through the directory and collect image paths and labels
-    for root_dir, _, filenames in os.walk(image_path):
-        for filename in filenames:
-            # Ignore hidden files and non-image files
-            if filename.startswith('.') or os.path.splitext(filename)[1].lower() not in {".jpeg", ".png", ".jpg"}:
-                continue
-
-            # Extract the folder name as the label, ignoring 'GT' directories
-            folder_label = os.path.basename(root_dir)
-            if folder_label != "GT":
+    paths, labels = [], []
+    
+    for root, _, files in os.walk(path):
+        folder_label = os.path.basename(root)
+        if folder_label == "GT" or folder_label.startswith("."):
+            continue
+        
+        for file in files:
+            if file.lower().endswith(('.jpeg', '.png', '.jpg')) and not file.startswith('.'):
+                paths.append(os.path.join(root, file))
                 labels.append(folder_label)
-                paths.append(os.path.join(root_dir, filename))
-
-    # Create DataFrame with paths and folder labels
+    
     df = pd.DataFrame({'image_path': paths, 'folder_label': labels})
     df['folder_label'] = df['folder_label'].astype("category")
-
-    # Split the folder_label into 'family', 'genus', and 'species'
+    
     try:
         df[['family', 'genus', 'species']] = df['folder_label'].str.split("_", expand=True)
         df['species'] = df['genus'] + " " + df['species']
-    except ValueError as e:
-        raise ValueError(
-            "Error splitting folder labels. Ensure that your folder structure follows 'family_genus_species' format."
-        ) from e
-
-    if source is not None:
+    except ValueError:
+        raise ValueError("Ensure the folder structure follows 'family_genus_species' format.")
+    
+    if source:
         df['source'] = source
-        return df[['image_path', 'source', 'folder_label', 'family', 'genus', 'species']]
-
-    else:
-        return df[['image_path', 'folder_label', 'family', 'genus', 'species']]
+    
+    return df
 
 
-def split_image_dataframe(df, test_size=0.2, val_size=0.1, random_state=42, stratify_by='folder_label'):
+def split_dataframe(df, test_size=0.2, val_size=0.1, random_state=42, stratify_by='folder_label'):
     """
     Split a pandas DataFrame into train, validation, and test sets,
     stratified by the 'folder_name' column.
@@ -167,6 +151,7 @@ def split_image_dataframe(df, test_size=0.2, val_size=0.1, random_state=42, stra
     Returns:
         tuple: Three pandas DataFrames for train, validation, and test sets.
     """
+    
     # First, split into train+validation and test sets
     train_val_df, test_df = train_test_split(
         df,
@@ -187,6 +172,74 @@ def split_image_dataframe(df, test_size=0.2, val_size=0.1, random_state=42, stra
     )
     
     return train_df, val_df, test_df
+
+
+def load_image(image_path, image_size: tuple[int, int] = None):
+    
+    img = tf.io.read_file(image_path)
+    img = tf.image.decode_jpeg(img, channels=3)
+    
+    if image_size:
+        img = tf.image.resize(img, image_size)
+    
+    return img
+
+
+def standard_directory(input_path, prefix, quality=95):
+    """
+    Converts images to JPEG format (if necessary) and renames them according to the given pattern.
+
+    Args:
+        input_path (str): Path to the main directory containing subfolders.
+        prefix (str): A prefix to add at the beginning of each renamed image.
+        quality (int, optional): JPEG quality for saving images. Defaults to 95.
+
+    Example:
+        If a subfolder is named "Family_Genus_species", the images inside it will be renamed to:
+        "{prefix}_Genus_species_0001.jpeg", "{prefix}_Genus_species_0002.jpeg", etc.
+    """
+    input_dir = Path(input_path)
+
+    # Iterate over subfolders in the input directory
+    for subfolder in input_dir.iterdir():
+        if not subfolder.is_dir():
+            continue
+
+        parts = subfolder.name.split('_')
+        if len(parts) != 3:
+            print(f"Skipping folder '{subfolder.name}': not in 'Family_Genus_species' format.")
+            continue
+
+        _, genus, species = parts
+
+        # Get and sort all image files with supported extensions
+        supported_exts = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'}
+        image_files = sorted(
+            [img for img in subfolder.iterdir() if img.is_file() and img.suffix.lower() in supported_exts]
+        )
+
+        for idx, image_file in enumerate(image_files, start=1):
+            # Format the counter with leading zeros (e.g., 0001, 0002, ...)
+            new_image_name = f"{prefix}_{genus}_{species}_{idx:04}.jpeg"
+            new_image_path = subfolder / new_image_name
+
+            try:
+                with Image.open(image_file) as img:
+                    # Convert image to RGB if needed (e.g., for PNG images with transparency)
+                    if img.mode in ("RGBA", "P"):
+                        img = img.convert("RGB")
+                    img.save(new_image_path, "JPEG", quality=quality)
+
+                # Remove the original file if it differs from the new path
+                if image_file != new_image_path:
+                    image_file.unlink()
+
+                print(f"Converted and renamed: {image_file} -> {new_image_path}")
+            except Exception as e:
+                print(f"Error processing {image_file}: {e}")
+
+    print("Renaming and conversion completed.")
+    return True
 
 
 def process_image_and_labels(image_path, family, genus, species, family_labels, genus_labels, species_labels, image_size=(224,224)):
@@ -218,11 +271,7 @@ def process_image_and_labels(image_path, family, genus, species, family_labels, 
         A dictionary containing one-hot encoded labels for family, genus, and species.
     """
     # Load the raw data from the file as a string
-    img = tf.io.read_file(image_path)
-    # Decode the image
-    img = tf.image.decode_jpeg(img, channels=3)
-    # Resize the image to the desired size
-    img = tf.image.resize(img, image_size)
+    img = load_image(image_path, image_size)
 
     # Convert family, genus, and species to indices
     family_label = tf.argmax(tf.equal(family_labels, family))
@@ -242,7 +291,7 @@ def process_image_and_labels(image_path, family, genus, species, family_labels, 
     }
 
 
-def tf_dataset_from_pandas(df, batch_size=32, image_size=(224,224), shuffle=True):
+def tensorflow_dataset(df, batch_size: int=32, image_size: tuple[int, int]=(224, 224), shuffle: bool=True) -> tf.data.Dataset:
     """
     Build a TensorFlow dataset from a DataFrame containing image paths and taxonomic labels.
 
@@ -268,6 +317,7 @@ def tf_dataset_from_pandas(df, batch_size=32, image_size=(224,224), shuffle=True
     species_labels : list
         A sorted list of unique species labels.
     """
+    
     # Extract the unique family, genus, and species from the dataframe
     family_labels = sorted(df['family'].unique())
     genus_labels = sorted(df['genus'].unique())
@@ -284,7 +334,7 @@ def tf_dataset_from_pandas(df, batch_size=32, image_size=(224,224), shuffle=True
     )
 
     # Map the processing function to the dataset
-    image_label_ds = path_ds.map(
+    image_dataset = path_ds.map(
         lambda path, family, genus, species: process_image_and_labels(
             path, family, genus, species, family_labels, genus_labels, species_labels, image_size=image_size
         ),
@@ -292,20 +342,15 @@ def tf_dataset_from_pandas(df, batch_size=32, image_size=(224,224), shuffle=True
     )
 
     # Shuffle, batch, and prefetch the dataset
-    image_label_ds = image_label_ds\
+    image_dataset = image_dataset\
         .batch(batch_size)\
         .cache()\
         .prefetch(buffer_size=tf.data.AUTOTUNE)
         
     if shuffle:
-        image_label_ds = image_label_ds.shuffle(buffer_size=len(df))
+        image_dataset = image_dataset.shuffle(buffer_size=len(df))
 
-    return (
-        image_label_ds,
-        family_labels.numpy().tolist(),
-        genus_labels.numpy().tolist(),
-        species_labels.numpy().tolist(),
-    )
+    return image_dataset
 
 
 def predict_image(image_path, model, family_labels, genus_labels, species_labels, image_size=(224,224) ,top_k=3):
@@ -328,9 +373,7 @@ def predict_image(image_path, model, family_labels, genus_labels, species_labels
     """
 
     # Load and preprocess the image
-    img = tf.io.read_file(image_path)
-    img = tf.image.decode_jpeg(img, channels=3)
-    img = tf.image.resize(img, image_size)
+    img = load_image(image_path, image_size)
     img = tf.expand_dims(img, 0)  # Add batch dimension
 
     # Predict family, genus, and species
@@ -735,90 +778,238 @@ class CryptoVisionAI:
         plt.show()
 
 
-def fetch_inaturalist_observations(taxon_name, rank, per_page=30, page=1):
-    """
-    Fetch observations for a given taxon name and rank from iNaturalist API.
-    
-    Args:
-        taxon_name (str): Name of the taxon (family, genus, or species).
-        rank (str): The rank of the taxon ('family', 'genus', 'species').
-        per_page (int): Number of observations to fetch per page.
-        page (int): Page number to fetch.
-
-    Returns:
-        dict: JSON response from the API containing observations.
-    """
-    url = "https://api.inaturalist.org/v1/observations"
-    params = {
-        "taxon_name": taxon_name,
-        "rank": rank,
-        "per_page": per_page,
-        "page": page,
-        "photos": True
-    }
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f"Error fetching data from iNaturalist: {response.status_code}")
-        return None
-
-def download_image(url, save_path):
-    """
-    Download an image from a URL and save it to the specified path.
-
-    Args:
-        url (str): URL of the image to download.
-        save_path (str): Local path to save the image.
-    """
-    try:
-        response = requests.get(url, stream=True)
-        if response.status_code == 200:
-            with open(save_path, 'wb') as file:
-                for chunk in response.iter_content(1024):
-                    file.write(chunk)
-            print(f"Image downloaded: {save_path}")
-        else:
-            print(f"Failed to download image from {url} (Status code: {response.status_code})")
-    except Exception as e:
-        print(f"Error downloading image: {e}")
-
-def download_taxon_images(taxon_name, rank, download_dir, max_images=10):
-    """
-    Download images of a specific taxon (family, genus, or species) from iNaturalist.
-
-    Args:
-        taxon_name (str): Name of the taxon.
-        rank (str): Rank of the taxon ('family', 'genus', 'species').
-        download_dir (str): Directory to save the downloaded images.
-        max_images (int): Maximum number of images to download.
-    """
-    if not os.path.exists(download_dir):
-        os.makedirs(download_dir)
-
-    page = 1
-    downloaded_count = 0
-    while downloaded_count < max_images:
-        observations = fetch_inaturalist_observations(taxon_name, rank, page=page)
-        if not observations or not observations.get('results'):
-            print("No more observations found.")
-            break
+class INaturalistScraper:
+    def __init__(self, download_dir="images"):
+        """
+        Initialize the iNaturalist scraper with a directory to save images.
         
-        for result in observations['results']:
-            if downloaded_count >= max_images:
+        Parameters:
+        - download_dir (str): Directory to save downloaded images.
+        """
+        self.download_dir = download_dir
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir)
+    
+    def fetch_observations(self, taxon_name, rank, per_page=30, page=1):
+        """
+        Fetch observations for a given taxon name and rank from iNaturalist API.
+        
+        Args:
+            taxon_name (str): Name of the taxon (family, genus, or species).
+            rank (str): The rank of the taxon ('family', 'genus', 'species').
+            per_page (int): Number of observations to fetch per page.
+            page (int): Page number to fetch.
+        
+        Returns:
+            dict: JSON response from the API containing observations.
+        """
+        url = "https://api.inaturalist.org/v1/observations"
+        params = {
+            "taxon_name": taxon_name,
+            "rank": rank,
+            "per_page": per_page,
+            "page": page,
+            "photos": True
+        }
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Error fetching data from iNaturalist: {response.status_code}")
+            return None
+
+    def download_image(self, url, save_path):
+        """
+        Download an image from a URL and save it to the specified path.
+        
+        Args:
+            url (str): URL of the image to download.
+            save_path (str): Local path to save the image.
+        """
+        try:
+            response = requests.get(url, stream=True)
+            if response.status_code == 200:
+                with open(save_path, 'wb') as file:
+                    for chunk in response.iter_content(1024):
+                        file.write(chunk)
+                print(f"Image downloaded: {save_path}")
+            else:
+                print(f"Failed to download image from {url} (Status code: {response.status_code})")
+        except Exception as e:
+            print(f"Error downloading image: {e}")
+    
+    def download_taxon_images(self, taxon_name, rank, max_images=10):
+        """
+        Download images of a specific taxon (family, genus, or species) from iNaturalist.
+        
+        Args:
+            taxon_name (str): Name of the taxon.
+            rank (str): Rank of the taxon ('family', 'genus', 'species').
+            max_images (int): Maximum number of images to download.
+        """
+        downloaded_count, page = 0, 1
+        while downloaded_count < max_images:
+            observations = self.fetch_observations(taxon_name, rank, page=page)
+            if not observations or not observations.get('results'):
+                print("No more observations found.")
                 break
-            for photo in result.get('photos', []):
-                image_url = photo.get('url')
-                if image_url:
-                    # Construct the URL for the original-sized image
-                    original_url = image_url.replace("square", "original")
-                    image_id = photo.get('id')
-                    extension = original_url.split('.')[-1]
-                    save_path = os.path.join(download_dir, f"{taxon_name}_{image_id}.{extension}")
-                    download_image(original_url, save_path)
-                    downloaded_count += 1
+            
+            for result in observations['results']:
+                if downloaded_count >= max_images:
+                    break
+                for photo in result.get('photos', []):
+                    image_url = photo.get('url')
+                    if image_url:
+                        original_url = image_url.replace("square", "original")
+                        image_id = photo.get('id')
+                        extension = original_url.split('.')[-1]
+                        save_path = os.path.join(self.download_dir, f"{taxon_name}_{image_id}.{extension}")
+                        self.download_image(original_url, save_path)
+                        downloaded_count += 1
+            page += 1
+        print(f"Downloaded {downloaded_count} images for taxon '{taxon_name}' with rank '{rank}'.")
 
-        page += 1
 
-    print(f"Downloaded {downloaded_count} images for taxon '{taxon_name}' with rank '{rank}'.")
+class ImageAttributes:
+    
+    def __init__(self, image_path):
+        self.image_path = Path(image_path)  # Ensure it's a Path object
+        self.img = Image.open(self.image_path)
+        
+        # Basic Attributes
+        self.hash = str(imagehash.phash(self.img))  # Perceptual hash
+        self.width, self.height = self.img.size  # Dimensions
+        self.aspect_ratio = round(self.width / self.height, 2)  # Aspect ratio
+        self.format = self.img.format  # Image format (JPG, PNG, etc.)
+        self.mode = self.img.mode  # Color mode (RGB, Grayscale, etc.)
+        self.file_size = self.image_path.stat().st_size  # File size in bytes
+
+        # Image Quality & Color Analysis
+        self.mean_brightness = self.calculate_mean_brightness()
+        self.contrast = self.calculate_contrast()
+        self.entropy = self.img.entropy()  # Image entropy (higher = more detail)
+        self.blur_score = self.calculate_blur()  # Laplacian blur detection
+        self.color_histogram = self.calculate_color_histogram()
+        self.dominant_color = self.calculate_dominant_color()
+
+        # Metadata Extraction
+        self.metadata = self.extract_exif_metadata()
+
+    def calculate_mean_brightness(self):
+        """Calculate the mean pixel brightness."""
+        stat = ImageStat.Stat(self.img)
+        return round(sum(stat.mean) / len(stat.mean), 2)
+
+    def calculate_contrast(self):
+        """Calculate the contrast of the image using pixel standard deviation."""
+        try:
+            stat = ImageStat.Stat(self.img)
+            variance = [max(v, 0) for v in stat.var]  # Ensure non-negative values
+            return round(sum(math.sqrt(v) for v in variance) / len(variance), 2)
+        except Exception as e:
+            print(f"Error calculating contrast for {self.image_path}: {e}")
+            return None  # Return None if contrast calculation fails
+
+    def calculate_blur(self):
+        """Estimate blur using variance of Laplacian."""
+        img_cv = cv2.imread(str(self.image_path), cv2.IMREAD_GRAYSCALE)
+        return round(cv2.Laplacian(img_cv, cv2.CV_64F).var(), 2) if img_cv is not None else None
+
+    def calculate_color_histogram(self):
+        """Compute a simple RGB histogram to detect grayscale images."""
+        hist = self.img.histogram()
+        return {
+            "R": sum(hist[0:256]), 
+            "G": sum(hist[256:512]), 
+            "B": sum(hist[512:768])
+        }
+
+    def calculate_dominant_color(self):
+        """Compute the dominant color in the image."""
+        # Ensure image is in RGB mode
+        img = self.img.convert("RGB")
+        
+        # Convert image to NumPy array
+        img_array = np.array(img)
+        
+        # Ensure it has 3 channels (RGB)
+        if len(img_array.shape) == 2:  # Grayscale image, convert to RGB
+            img_array = np.stack([img_array] * 3, axis=-1)
+        
+        # Reshape to a list of pixels and compute the mean color
+        pixels = img_array.reshape(-1, 3)
+        dominant_color = np.mean(pixels, axis=0)
+        
+        return tuple(map(int, dominant_color))  # Convert to (R, G, B) format
+
+    def extract_exif_metadata(self):
+        """Extracts EXIF metadata if available."""
+        try:
+            exif_data = self.img._getexif()
+            if exif_data:
+                return {ExifTags.TAGS.get(tag, tag): value for tag, value in exif_data.items()}
+        except AttributeError:
+            return {}
+        return {}
+
+    def to_dict(self, min_size):
+        """
+        Convert image attributes to a dictionary.
+        Adds `flag_small` to indicate if the image is smaller than `min_size`.
+        """
+        return {
+            "image_path": str(self.image_path),
+            "hash": self.hash,
+            "width": self.width,
+            "height": self.height,
+            "aspect_ratio": self.aspect_ratio,
+            "format": self.format,
+            "mode": self.mode,
+            "file_size": self.file_size,
+            "brightness": self.mean_brightness,
+            "contrast": self.contrast,
+            "entropy": self.entropy,
+            "blur_score": self.blur_score,
+            "dominant_color": self.dominant_color,
+            "flag_small": self.width < min_size and self.height < min_size
+        }
+
+    def __repr__(self):
+        return (
+            f"Image: {self.image_path}, Format: {self.format}, Mode: {self.mode}, "
+            f"Size: {self.width}x{self.height}, Aspect Ratio: {self.aspect_ratio}, "
+            f"Brightness: {self.mean_brightness}, Contrast: {self.contrast}, "
+            f"Entropy: {self.entropy}, Blur Score: {self.blur_score}, "
+            f"Dominant Color: {self.dominant_color}"
+        )
+
+
+def build_dataframe(path: Path, source: str, min_size: int, num_workers: int = None):
+    """
+    Build dataset by extracting image attributes in parallel.
+    """
+    
+    # Get initial DataFrame
+    df = image_dir_pandas(path, source)
+    
+    # Process images in parallel
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        results = list(executor.map(lambda img: ImageAttributes(img).to_dict(min_size), df["image_path"]))
+
+    # Remove failed results (None values)
+    results = [res for res in results if res is not None]
+
+    # Convert results to DataFrame
+    df_attributes = pd.DataFrame.from_records(results)
+
+    # Merge attributes back with the original metadata
+    df = df.merge(df_attributes, on="image_path", how="left")
+    
+    # Flag duplicates
+    df['duplicates'] = df.duplicated(subset='hash', keep='first')
+    
+    # Round entropy to 5 digits
+    df['entropy'] = df['entropy'].round(5)
+
+    return df
 
