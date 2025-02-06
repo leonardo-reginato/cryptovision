@@ -9,8 +9,8 @@ from loguru import logger
 from wandb.integration.keras import WandbMetricsLogger
 from sklearn.model_selection import train_test_split
 from cryptovision.tools import (
-    TQDMProgressBar, image_directory_to_pandas, 
-    split_image_dataframe, tf_dataset_from_pandas
+    TQDMProgressBar, image_dir_pandas, 
+    split_dataframe, tensorflow_dataset
 )
 
 from tensorflow.keras import Layer, layers, backend                 # type: ignore
