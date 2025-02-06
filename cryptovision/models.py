@@ -46,10 +46,7 @@ def basic_multioutput(pretrain, preprocess, output_units: tuple[int, int, int], 
     features = layers.GlobalMaxPooling2D(name='GlobMaxPool2D')(x)
     
     # Shared Layer
-    shared_layer = layers.Dense(features.shape[-1], name='shared_layer')(features)
-    shared_layer = layers.BatchNormalization()(shared_layer)
-    shared_layer = layers.Activation('relu')(shared_layer)
-    shared_layer = layers.Dropout(dropout)(shared_layer)
+    shared_layer = dense_block(features, 'shared_layer', features.shape[-1], dropout, activation='relu', norm=True)
     
     # Outputs (Family, Genus, Species)
     family_output = layers.Dense(output_units[0], activation='softmax', name='family')(shared_layer)
@@ -114,15 +111,15 @@ def hidden_based(pretrain, preprocess, output_units: tuple[int, int, int], hidde
     
     # Family
     family_hidden = dense_block(features, hidden_size[0], 0.3, 'family_hidden')
-    family_output = layers.Dense(outputs_size[0], activation='softmax', name='family')(family_hidden)
+    family_output = layers.Dense(output_units[0], activation='softmax', name='family')(family_hidden)
     
     # Genus
     genus_hidden = dense_block(family_hidden, hidden_size[1], 0.2, 'genus_hidden', norm=False)
-    genus_output = layers.Dense(outputs_size[1], activation='softmax', name='genus')(genus_hidden)
+    genus_output = layers.Dense(output_units[1], activation='softmax', name='genus')(genus_hidden)
     
     # Species Output
     species_hidden = dense_block(genus_hidden, hidden_size[2], 0.1, 'species_hidden', norm=False)
-    species_output = layers.Dense(outputs_size[2], activation='softmax', name='species')(species_hidden)
+    species_output = layers.Dense(output_units[2], activation='softmax', name='species')(species_hidden)
     
     model = tf.keras.Model(
         inputs, 
