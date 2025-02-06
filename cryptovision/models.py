@@ -33,20 +33,25 @@ def dense_block(input_layer, name:str, units:int, dropout:float, activation:str=
     x = layers.Dropout(dropout)(x)
     return x
 
-def basic_multioutput(pretrain, preprocess, output_units: tuple[int, int, int], input_shape=(224, 224, 3), dropout=0.3, name=None, augmentation=None, trainable:bool = False,):
-    
-    pretrain.trainable = trainable
+def pretrain_model(backbone, preprocess, input_shape=(224, 224, 3), name=None, augmentation=None):
     
     inputs = layers.Input(shape=input_shape, name='input_layer')
     x = augmentation(inputs) if augmentation else inputs
     x = preprocess(x)
-    x = pretrain(x, training=False)
+    x = backbone(x, training=False)
+    
+    return tf.keras.Model(inputs, x, name=name)
+
+def basic_multioutput(pretrain, preprocess, output_units: tuple[int, int, int], input_shape=(224, 224, 3), dropout=0.3, name=None, augmentation=None, trainable:bool = False, shared_units:int=None):
+    
+    pretrain.trainable = trainable
+    premodel = pretrain_model(pretrain, preprocess, input_shape=input_shape, name='pretrain', augmentation=augmentation)
     
     # Feature Extracion from Pretrained Model
-    features = layers.GlobalMaxPooling2D(name='GlobMaxPool2D')(x)
+    features = layers.GlobalMaxPooling2D(name='GlobMaxPool2D')(premodel.output)
     
     # Shared Layer
-    shared_layer = dense_block(features, 'shared_layer', features.shape[-1], dropout, activation='relu', norm=True)
+    shared_layer = dense_block(features, 'shared_layer', shared_units or features.shape[-1], dropout, activation='relu', norm=True)
     
     # Outputs (Family, Genus, Species)
     family_output = layers.Dense(output_units[0], activation='softmax', name='family')(shared_layer)
@@ -54,7 +59,7 @@ def basic_multioutput(pretrain, preprocess, output_units: tuple[int, int, int], 
     species_output = layers.Dense(output_units[2], activation='softmax', name='species')(shared_layer)
     
     model = tf.keras.Model(
-        inputs,
+        premodel.input,
         [family_output, genus_output, species_output], 
         name=name or 'MultiOutputBasic'
     )
@@ -178,4 +183,8 @@ def dummy():
 
 if __name__ == "__main__":
     
-    pass
+    backbone = keras_apps.ResNet50V2(include_top=False, weights='imagenet', input_shape=(224, 224, 3))
+    backbone.trainable = False
+    model = basic_multioutput(backbone, keras_apps.resnet_v2.preprocess_input, (10, 20, 30), shared_units=512)
+    
+    model.summary()
