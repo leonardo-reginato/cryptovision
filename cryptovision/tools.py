@@ -1,29 +1,28 @@
 import os
+import math
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+
+import cv2
+import imagehash
 import requests
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 import tensorflow as tf
 import matplotlib.pyplot as plt
-from PIL import Image
+
+from PIL import Image, ImageStat, ExifTags
+from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from tf_keras_vis.utils.model_modifiers import ReplaceToLinear
 from tf_keras_vis.utils.scores import CategoricalScore
 from tf_keras_vis.saliency import Saliency
 from skimage.segmentation import mark_boundaries
 from lime.lime_image import LimeImageExplainer
-from tensorflow.keras.callbacks import Callback            # type: ignore
+from tensorflow.keras.callbacks import Callback     # type: ignore
 
 from loguru import logger
 from colorama import Fore, Style
-from pathlib import Path 
-from PIL import Image, ImageStat, ExifTags
-import imagehash
-import numpy as np
-import cv2
-from concurrent.futures import ThreadPoolExecutor
-import pandas as pd
-import math
 
 
 class TQDMProgressBar(Callback):
