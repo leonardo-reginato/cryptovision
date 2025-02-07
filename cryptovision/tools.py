@@ -983,7 +983,7 @@ class ImageAttributes:
         )
 
 
-def build_dataframe(path: Path, source: str, min_size: int, num_workers: int = None):
+def build_catalog(path: Path, source: str, min_size: int, num_workers: int = None):
     """
     Build dataset by extracting image attributes in parallel.
     """
