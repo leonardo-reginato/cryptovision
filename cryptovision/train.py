@@ -8,10 +8,7 @@ import tensorflow as tf
 from loguru import logger
 from wandb.integration.keras import WandbMetricsLogger
 from sklearn.model_selection import train_test_split
-from cryptovision.tools import (
-    TQDMProgressBar, image_dir_pandas, 
-    split_dataframe, tensorflow_dataset
-)
+from cryptovision import tools
 
 from tensorflow.keras import Layer, layers, backend                 # type: ignore
 from tensorflow.keras import applications as keras_apps             # type: ignore
@@ -41,166 +38,7 @@ for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
     
 wandb.require("core")
-
-class SaveModelAtEpochs(tf.keras.callbacks.Callback):
-    def __init__(self, save_dir, save_epochs):
-        """
-        Callback to save the model at specific epochs.
-        
-        Parameters:
-        - save_dir: str, Directory to save the models.
-        - save_epochs: list, List of epochs at which to save the model.
-        """
-        super(SaveModelAtEpochs, self).__init__()
-        self.save_dir = save_dir
-        self.save_epochs = set(save_epochs)  # Use a set for faster lookup
-        
-        # Create directory if it doesn't exist
-        os.makedirs(self.save_dir, exist_ok=True)
-
-    def on_epoch_end(self, epoch, logs=None):
-        """
-        Save the model at specified epochs.
-        """
-        # Epochs in Keras are 0-indexed, so add 1
-        current_epoch = epoch + 1
-        if current_epoch in self.save_epochs:
-            model_path = os.path.join(self.save_dir, f"model_epoch_{current_epoch}.keras")
-            self.model.save(model_path)
-            print(f"\nModel saved at: {model_path}")
     
-def phorcys_v09 (
-    labels, augmentation, input_shape=(224, 224, 3), shared_neurons=512, name=None,
-    genus_neurons=256, species_neurons=128, dropout_rate=0.3
-):
-    
-    pretrain = keras_apps.ResNet50V2(include_top=False, weights='imagenet', input_shape=input_shape)
-    pretrain.trainable = False
-
-    inputs = layers.Input(shape=input_shape, name='input')
-    x = augmentation(inputs)
-    x = keras_apps.resnet_v2.preprocess_input(x)
-    x = pretrain(x, training=False)
-    features = layers.GlobalAveragePooling2D()(x)
-
-    shared_layer = layers.Dense(shared_neurons,name='shared_layer')(features)
-    shared_layer = layers.BatchNormalization()(shared_layer)
-    shared_layer = layers.Activation('relu')(shared_layer)
-    shared_layer = layers.Dropout(dropout_rate)(shared_layer)
-
-    # Family Output
-    family_output = layers.Dense(len(labels['family']), activation='softmax', name='family')(shared_layer)
-
-    # Genus Output
-    genus_features = layers.Concatenate()([shared_layer, family_output])
-    genus_hidden = layers.Dense(genus_neurons, activation='relu')(genus_features)
-    genus_output = layers.Dense(len(labels['genus']), activation='softmax', name='genus')(genus_hidden)
-
-    # Species Output
-    species_features = layers.Concatenate()([shared_layer, family_output, genus_output])
-    species_hidden = layers.Dense(species_neurons, activation='relu')(species_features)
-    species_output = layers.Dense(len(labels['species']), activation='softmax', name='species')(species_hidden)
-
-    model = tf.keras.Model(
-        inputs, 
-        [family_output, genus_output, species_output],
-        name = "PhorcysV9" if name is None else name
-    )
-    
-    return model
-
-def phorcys_v10 (labels, augmentation, input_shape=(224, 224, 3), size="m",  name=None, dropout_rate=0.3):
-    """
-    Phorcys V10 model architecture.
-
-    Args:
-    - labels: dictionary, Labels for each level of the hierarchy.
-    - augmentation: function, Data augmentation function.
-    - input_shape: tuple, Shape of the input data.
-    - size: str, Size of the model. Must be one of 'xs', 's', 'm', 'l'.
-    """
-    if size == "xs":
-        factor = .25
-    elif size == "s":
-        factor = .5
-    elif size == "m":
-        factor = 1
-    elif size == "l":
-        factor = 2    
-    else:
-        raise ValueError("Size must be one of 'xs', 's', 'm', 'l'")
-    
-    #pretrain = keras_apps.ResNet50V2(include_top=False, weights='imagenet', input_shape=input_shape)
-    pretrain = keras_apps.ResNet152V2(include_top=False, weights='imagenet', input_shape=input_shape)
-    pretrain.trainable = False
-
-    inputs = layers.Input(shape=input_shape, name='input')
-    x = augmentation(inputs)
-    x = keras_apps.resnet_v2.preprocess_input(x)
-    x = pretrain(x, training=False)
-    features = layers.GlobalAveragePooling2D()(x)
-    
-    layer_size = int(1024 * factor)
-
-    shared_layer = layers.Dense(layer_size, name='shared_layer')(features)
-    shared_layer = layers.BatchNormalization()(shared_layer)
-    shared_layer = layers.Activation('relu')(shared_layer)
-    shared_layer = layers.Dropout(dropout_rate)(shared_layer)
-
-    # Family Output
-    family_output = layers.Dense(len(labels['family']), activation='softmax', name='family')(shared_layer)
-
-    # Genus Output
-    family_mask = layers.Dense(layer_size, activation='relu', name='family_mask')(family_output)
-    genus_features = layers.Multiply()([shared_layer, family_mask])
-    genus_features = layers.LayerNormalization()(genus_features)
-    genus_output = layers.Dense(len(labels['genus']), activation='softmax', name='genus')(genus_features)
-
-    # Species Output
-    genus_mask = layers.Dense(layer_size, activation='relu', name='genus_mask')(genus_output)
-    species_features = layers.Multiply()([shared_layer, genus_mask])
-    species_features = layers.LayerNormalization()(species_features)
-    species_output = layers.Dense(len(labels['species']), activation='softmax', name='species')(species_features)
-
-    model = tf.keras.Model(
-        inputs, 
-        [family_output, genus_output, species_output],
-        name = "PhorcysV10" if name is None else name
-    )
-    
-    return model
-
-def basic_model (name, labels, pretrain, preprocess, input_shape, augmentation=None):
-    
-    inputs = layers.Input(shape=input_shape, name='input_layer')
-    x = augmentation(inputs) if augmentation else inputs
-    x = preprocess(x)
-    x = pretrain(x, training=False)
-    
-    # Feature Extracion from Pretrained Model
-    features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(x)
-    
-    # Shared Layer
-    shared_layer = layers.Dense(features.shape[-1], name='shared_layer')(features)
-    shared_layer = layers.BatchNormalization()(shared_layer)
-    shared_layer = layers.Activation('relu')(shared_layer)
-    shared_layer = layers.Dropout(0.3)(shared_layer)
-    
-    
-    
-    # Family Output
-    family_output = layers.Dense(len(labels['family']), activation='softmax', name='family')(shared_layer)
-    
-    # Genus Output
-    genus_output = layers.Dense(len(labels['genus']), activation='softmax', name='genus')(shared_layer)
-    
-    # Species Output
-    species_output = layers.Dense(len(labels['species']), activation='softmax', name='species')(shared_layer)
-    
-    model = tf.keras.Model(inputs, [family_output, genus_output, species_output], name=name)
-    
-    return model
-
 if __name__ == '__main__':
     
     SETUP = {
@@ -208,7 +46,7 @@ if __name__ == '__main__':
         "verbose": 0,
         "version": f"v{datetime.datetime.now().strftime('%y%m.%d.%H%M')}",
         "project": 'DataSet Comparison',
-        "pretrain": "RN50v2",
+        "pretrain": "RN152v2",
         "finetune": False,
         
         "model": {
@@ -220,8 +58,8 @@ if __name__ == '__main__':
         },
         
         "image": {
-            "size": (128, 128),
-            "shape": (128, 128, 3),
+            "size": (224, 224),
+            "shape": (224, 224, 3),
         },
        
         "dataset": {
@@ -285,24 +123,34 @@ if __name__ == '__main__':
         },
     }
     
-    df_inat = image_directory_to_pandas(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250116/images'
+    df_og = pd.read_csv(
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v3.0.0/image_catalog.csv'
     )
-
-    df_inat_clean = image_directory_to_pandas(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Sources/INaturaList/Species/v250128/images'
+    
+    df_clean = pd.read_csv(
+        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v3.0.0/image_catalog_clean.csv'
     )
-
-    species_list = df_inat_clean['species'].unique()
-
-    df_inat = df_inat[df_inat['species'].isin(species_list)]
     
-    df = df_inat_clean.copy()
-    
-    #counts = df['species'].value_counts()
-    #df = df[df['species'].isin(counts[counts >= SETUP['dataset']['class_samples_threshold']].index)]
+    def clean_dataframe(df, sample_limit):
+        # Rmv duplicates
+        df = df.drop_duplicates(subset='hash', keep='first')
 
-    train_df, val_df, test_df = split_image_dataframe(
+        # Rmv Species with less than few images
+        df = df[df['species'].map(df['species'].value_counts()) > sample_limit]
+        
+        df.reset_index(drop=True, inplace=True)
+        
+        return df
+    
+    df_clean = clean_dataframe(df_clean, 90)
+    
+    df_og = clean_dataframe(df_og, 50)
+    
+    #df = df_og[df_og['species'].isin(df_clean['species'].unique())]
+    
+    df = df_clean.copy()
+    
+    train_df, val_df, test_df = tools.split_dataframe(
         df, 
         test_size=SETUP['dataset']['test_size'], 
         val_size=SETUP['dataset']['validation_size'], 
@@ -316,19 +164,19 @@ if __name__ == '__main__':
         'species': sorted(df['species'].unique()),
     }
 
-    train_ds, _, _, _ = tf_dataset_from_pandas(
+    train_ds = tools.tensorflow_dataset(
         train_df, 
         batch_size=SETUP['dataset']['batch_size'], 
         image_size=SETUP['image']['size'],
     )
     
-    val_ds, _, _, _ = tf_dataset_from_pandas(
+    val_ds = tools.tensorflow_dataset(
         val_df, 
         batch_size=SETUP['dataset']['batch_size'], 
         image_size=SETUP['image']['size'],
     )
     
-    test_ds, _, _, _ = tf_dataset_from_pandas(
+    test_ds = tools.tensorflow_dataset(
         test_df, 
         batch_size=SETUP['dataset']['batch_size'], 
         image_size=SETUP['image']['size'],
@@ -336,9 +184,6 @@ if __name__ == '__main__':
     
     train_ds = train_ds.cache().shuffle(buffer_size=1000, seed=SEED).prefetch(buffer_size=tf.data.AUTOTUNE)
     val_ds = val_ds.cache().prefetch(buffer_size=tf.data.AUTOTUNE)
-    
-    logger.info(f"Dataset sizes:\n\tTrain: {train_df.shape[0]}\n\tVal: {val_df.shape[0]}\n\tTest: {test_df.shape[0]}")
-    logger.info(f"Number of classes:\n\tFamily: {len(names['family'])}\n\tGenus: {len(names['genus'])}\n\tSpecies: {len(names['species'])}")
     
     pretrain_models = {
         'RN50v2': {
@@ -417,8 +262,8 @@ if __name__ == '__main__':
         name='augmentation'
     )
     
-    NICKNAME = f"{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
-    NICKNAME = "DataSet_WebPlus3"
+    #NICKNAME = f"{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
+    NICKNAME = "DataSetClean_S_v2"
     TAGS = [SETUP['pretrain']]
     
     with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}, tags=TAGS) as run:
@@ -432,9 +277,8 @@ if __name__ == '__main__':
             pretrain = pretrain_models[SETUP['pretrain']]['model'],
             preprocess = pretrain_models[SETUP['pretrain']]['preprocess'],
             augmentation = augmentation,
-            #dropout_rate = SETUP['model']['args']['dropout_rate'],
             input_shape = SETUP['image']['shape'],
-            outputs_size = [
+            output_units = [
                 len(names['family']),
                 len(names['genus']),
                 len(names['species'])
@@ -481,7 +325,7 @@ if __name__ == '__main__':
             train_ds,
             epochs=SETUP['train']['epochs'],
             validation_data=val_ds,
-            callbacks=[wandb_logger, early_stopping, reduce_lr, checkpoint, TQDMProgressBar()],
+            callbacks=[wandb_logger, early_stopping, reduce_lr, checkpoint, tools.TQDMProgressBar()],
             verbose=0,
         )
 
@@ -520,7 +364,7 @@ if __name__ == '__main__':
                 epochs=total_epochs,
                 initial_epoch=len(history.epoch),
                 validation_data=val_ds,
-                callbacks=[wandb_logger, early_stopping, reduce_lr, checkpoint, TQDMProgressBar()],
+                callbacks=[wandb_logger, early_stopping, reduce_lr, checkpoint, tools.TQDMProgressBar()],
                 verbose=0,
             )
             
