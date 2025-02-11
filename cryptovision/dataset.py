@@ -28,7 +28,7 @@ catalog = {
     },
     'inat': {
         'path': f'{src_path}/INaturaList/Species/v250116/images_catalog.csv',
-        'clean_path': f'{src_path}/INaturaList/Species/v250128/images_catalog.csv',
+        'clean_path': f'{src_path}/INaturaList/Species/v250128/images_catalog_v250211.csv',
     }
 }
 
