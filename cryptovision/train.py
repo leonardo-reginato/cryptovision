@@ -15,6 +15,7 @@ from tensorflow.keras import applications as keras_apps             # type: igno
 from tensorflow.keras.saving import register_keras_serializable     # type: ignore
 
 from cryptovision import models
+import cryptovision.dataset as dataset
 
 SEED = 42
 
@@ -58,8 +59,8 @@ if __name__ == '__main__':
         },
         
         "image": {
-            "size": (224, 224),
-            "shape": (224, 224, 3),
+            "size": (128, 128),
+            "shape": (128, 128, 3),
         },
        
         "dataset": {
@@ -123,32 +124,7 @@ if __name__ == '__main__':
         },
     }
     
-    df_og = pd.read_csv(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v3.0.0/image_catalog.csv'
-    )
-    
-    df_clean = pd.read_csv(
-        '/Volumes/T7_shield/CryptoVision/Data/Images/Datasets/v3.0.0/image_catalog_clean.csv'
-    )
-    
-    def clean_dataframe(df, sample_limit):
-        # Rmv duplicates
-        df = df.drop_duplicates(subset='hash', keep='first')
-
-        # Rmv Species with less than few images
-        df = df[df['species'].map(df['species'].value_counts()) > sample_limit]
-        
-        df.reset_index(drop=True, inplace=True)
-        
-        return df
-    
-    df_clean = clean_dataframe(df_clean, 90)
-    
-    df_og = clean_dataframe(df_og, 50)
-    
-    #df = df_og[df_og['species'].isin(df_clean['species'].unique())]
-    
-    df = df_clean.copy()
+    df = dataset.main(min_samples=SETUP['dataset']['class_samples_threshold'],)
     
     train_df, val_df, test_df = tools.split_dataframe(
         df, 
@@ -263,7 +239,7 @@ if __name__ == '__main__':
     )
     
     #NICKNAME = f"{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
-    NICKNAME = "DataSetClean_S_v2"
+    NICKNAME = "DataSetClean_S_v3"
     TAGS = [SETUP['pretrain']]
     
     with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}, tags=TAGS) as run:
