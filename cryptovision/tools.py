@@ -650,12 +650,36 @@ class CryptoVisionAI:
             return self.preds if return_raw else self.decoder(self.preds)
         
         elif isinstance(input_data, tf.data.Dataset):
+            raw_predictions = []
             predictions = []
+            # Iterate over the dataset batches.
+            # (Assuming each element in the dataset is a tuple: (img_batch, labels))
             for img_batch, _ in input_data:
                 preds = self.model.predict(img_batch, verbose=0)
-                for p in zip(*preds):  # Unpack predictions for batch
-                    predictions.append(self.decoder(p))
-            return predictions if not return_raw else preds
+                # 'preds' is expected to be a list of three arrays (for family, genus, species)
+                for sample_preds in zip(*preds):  # Iterate per sample in the batch.
+                    raw_predictions.append(sample_preds)
+                    # For each output, determine the index with maximum probability
+                    family_idx = np.argmax(sample_preds[0])
+                    genus_idx = np.argmax(sample_preds[1])
+                    species_idx = np.argmax(sample_preds[2])
+                    
+                    # Extract the confidence (probability) for the predicted class
+                    family_conf = sample_preds[0][family_idx]
+                    genus_conf = sample_preds[1][genus_idx]
+                    species_conf = sample_preds[2][species_idx]
+                    
+                    # Decode the labels from the predicted indices
+                    family_label = self.family_names[family_idx]
+                    genus_label = self.genus_names[genus_idx]
+                    species_label = self.species_names[species_idx]
+                    
+                    predictions.append({
+                        "family": {"label": family_label, "confidence": float(family_conf)},
+                        "genus": {"label": genus_label, "confidence": float(genus_conf)},
+                        "species": {"label": species_label, "confidence": float(species_conf)}
+                    })
+            return raw_predictions if return_raw else predictions
         
         else:
             raise TypeError("Unsupported input type. Supported types: str (path), np.ndarray, tf.data.Dataset, pd.DataFrame")
