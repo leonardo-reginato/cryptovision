@@ -34,11 +34,8 @@ catalog = {
 
 @app.command()
 def main(
-    # ---- REPLACE DEFAULT PATHS AS APPROPRIATE ----
-    input_path: Path = RAW_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
     min_samples: int = 10,
-    # ----------------------------------------------
+    verbose: bool = True,
 ):
     datasets = []
     
@@ -47,20 +44,25 @@ def main(
         datasets.append(pd.read_csv(data['path']))
         
     data = pd.concat(datasets, axis=0, ignore_index=True)
-    
-    logger.info(f"Dataset shape before: {data.shape}")
-    logger.info(f"Fam {data['family'].nunique()} | Gen {data['genus'].nunique()} | Spec {data['species'].nunique()}")
-    
+    if verbose:
+        logger.info(f"Dataset shape before: {data.shape}")
+        logger.info(f"Fam {data['family'].nunique()} | Gen {data['genus'].nunique()} | Spec {data['species'].nunique()}")
+        
     data = data.drop_duplicates(subset='hash', keep='first')
-    logger.info(f"Number of duplicates: {data.shape[0] - data.drop_duplicates(subset='hash', keep='first').shape[0]}")
+    if verbose:
+        logger.info(f"Number of duplicates: {data.shape[0] - data.drop_duplicates(subset='hash', keep='first').shape[0]}")
     
     data = data[data['species'].map(data['species'].value_counts()) > min_samples]
-    logger.info(f"Filtration by species with more than {min_samples} images")
-    logger.info(f"Dataset shape after: {data.shape}")
-    logger.info(f"Fam {data['family'].nunique()} | Gen {data['genus'].nunique()} | Spec {data['species'].nunique()}")
+    
+    if verbose:
+        logger.info(f"Filtration by species with more than {min_samples} images")
+        logger.info(f"Dataset shape after: {data.shape}")
+        logger.info(f"Fam {data['family'].nunique()} | Gen {data['genus'].nunique()} | Spec {data['species'].nunique()}")
     
     data = data[~data['flag_small']]
-    logger.info(f"Filtration by small images {data.shape[0] - data[~data['flag_small']].shape[0]}")
+    
+    if verbose:
+        logger.info(f"Filtration by small images {data.shape[0] - data[~data['flag_small']].shape[0]}")
     
     return data
 
