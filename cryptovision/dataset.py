@@ -40,7 +40,8 @@ def main(
     datasets = []
     
     for name, data in catalog.items():
-        logger.info(f"Processing {name} dataset")
+        if verbose:
+            logger.info(f"Processing {name} dataset")
         datasets.append(pd.read_csv(data['path']))
         
     data = pd.concat(datasets, axis=0, ignore_index=True)
