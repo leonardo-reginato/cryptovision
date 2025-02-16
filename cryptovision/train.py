@@ -48,26 +48,26 @@ if __name__ == '__main__':
         "version": f"v{datetime.datetime.now().strftime('%y%m.%d.%H%M')}",
         "project": 'DataSet Comparison',
         "pretrain": "RN152v2",
-        "finetune": False,
+        "finetune": True,
         
         "model": {
             "function": models.basic_multioutput,
             "args": {
                 "dropout_rate": 0.3,
             },
-            "save": False,
+            "save": True,
         },
         
         "image": {
-            "size": (299, 299),
-            "shape": (299, 299, 3),
+            "size": (350, 350),
+            "shape": (350, 350, 3),
         },
        
         "dataset": {
             "version": "v2.0.0",
             "test_size": .15,
             "validation_size": .15,
-            "batch_size": 128,
+            "batch_size": 64,
             "class_samples_threshold": 90,
             "stratify_by": 'folder_label',
             "sources": ['fish_functions_v02','web', 'inaturalist_v03',],
@@ -117,7 +117,7 @@ if __name__ == '__main__':
     
         "fine_tune": {
             "epochs": 15,
-            "layers": 25,
+            "layers": 30,
             "lr": 1e-5,
             "pretrain_layer": "resnet50v2",
             "patience": 7
@@ -239,9 +239,9 @@ if __name__ == '__main__':
     )
     
     #NICKNAME = f"{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
-    NICKNAME = "DataSetClean_S_v3"
+    NICKNAME = "DataSetClean_M_v7"
     TAGS = [SETUP['pretrain']]
-    
+           
     with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}, tags=TAGS) as run:
         
         logger.info(f"Dataset Size: Train {train_df.shape[0]} ({train_df.shape[0] / df.shape[0] * 100:.2f}%) - Val {val_df.shape[0]} ({val_df.shape[0] / df.shape[0] * 100:.2f}%) - Test {test_df.shape[0]} ({test_df.shape[0] / df.shape[0] * 100:.2f}%)")
