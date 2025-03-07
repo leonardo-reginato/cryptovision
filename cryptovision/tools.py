@@ -170,6 +170,10 @@ def split_dataframe(df, test_size=0.2, val_size=0.1, random_state=42, stratify_b
         random_state=random_state
     )
     
+    train_df.reset_index(drop=True, inplace=True)
+    val_df.reset_index(drop=True, inplace=True)
+    test_df.reset_index(drop=True, inplace=True)
+    
     return train_df, val_df, test_df
 
 
