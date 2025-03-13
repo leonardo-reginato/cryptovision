@@ -2,8 +2,8 @@ import os
 import random
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, models as keras_models
-from tensorflow.keras import applications as keras_apps
+from tensorflow.keras import layers, models as keras_models     # type: ignore
+from tensorflow.keras import applications as keras_apps         # type: ignore
 
 SEED = 42
 random.seed(SEED)
