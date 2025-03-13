@@ -502,6 +502,42 @@ def get_taxonomic_mappings_from_folders(data_dir):
 
     return sorted(list(family_labels)), sorted(list(genus_labels)), sorted(list(species_labels)), genus_to_family, species_to_genus
 
+def get_taxonomic_mappings_from_dataframe(df):
+    """
+    Extract taxonomic mappings from a DataFrame that contains per-sample image labels.
+
+    Args:
+        df (pd.DataFrame): DataFrame with columns ['species', 'genus', 'family', 'folder_label']
+
+    Returns:
+        family_labels (list): Sorted unique list of family names
+        genus_labels (list): Sorted unique list of genus names
+        species_labels (list): Sorted unique list of species names (genus + species)
+        genus_to_family_map (dict): Mapping from genus index to family index
+        species_to_genus_map (dict): Mapping from species index to genus index
+    """
+
+    # Deduplicate based on folder_label (one per class is enough for structure)
+    df_unique = df[['species', 'genus', 'family']].drop_duplicates()
+
+    # Sorted label vocabularies
+    family_labels = sorted(df_unique['family'].unique())
+    genus_labels = sorted(df_unique['genus'].unique())
+    species_labels = sorted(df_unique['species'].unique())  # already "Genus species" string
+
+    # Map from genus index → family index
+    genus_to_family_map = {
+        genus_labels.index(row['genus']): family_labels.index(row['family'])
+        for _, row in df_unique[['genus', 'family']].drop_duplicates().iterrows()
+    }
+
+    # Map from species index → genus index
+    species_to_genus_map = {
+        species_labels.index(row['species']): genus_labels.index(row['genus'])
+        for _, row in df_unique[['species', 'genus']].drop_duplicates().iterrows()
+    }
+
+    return family_labels, genus_labels, species_labels, genus_to_family_map, species_to_genus_map
 
 def analyze_taxonomic_misclassifications(
     model, dataset, genus_labels, species_labels, genus_to_family, species_to_genus):
