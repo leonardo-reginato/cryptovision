@@ -56,9 +56,9 @@ class TQDMProgressBar(Callback):
         if batch % 1 == 0 or batch == self.params['steps'] - 1:
             self.epoch_bar.set_postfix({
                 'loss': f"{logs.get('loss', 0):.4f}",
-                'family_acc': f"{logs.get('family_accuracy', 0):.4f}",
-                'genus_acc': f"{logs.get('genus_accuracy', 0):.4f}",
-                'species_acc': f"{logs.get('species_accuracy', 0):.4f}",
+                'fam_acc': f"{logs.get('family_accuracy', 0):.4f}",
+                'gen_acc': f"{logs.get('genus_accuracy', 0):.4f}",
+                'spe_acc': f"{logs.get('species_accuracy', 0):.4f}",
             })
     
     def colorize_accuracy(self, value):
@@ -85,10 +85,10 @@ class TQDMProgressBar(Callback):
         val_species_acc_colored = self.colorize_accuracy(val_species_acc)
 
         summary_message = (
-            f"Epoch {epoch+1} completed - Loss: {logs.get('loss', 0):.4f}, "
-            f"Val Family Accuracy: {val_family_acc_colored}, "
-            f"Val Genus Accuracy: {val_genus_acc_colored}, "
-            f"Val Species Accuracy: {val_species_acc_colored}"
+            f"Epoch {epoch+1} - Val Loss: {logs.get('val_loss', 0):.4f}, "
+            f"Val Family Acc: {val_family_acc_colored}, "
+            f"Val Genus Acc: {val_genus_acc_colored}, "
+            f"Val Species Acc: {val_species_acc_colored}"
         )
         logger.info(summary_message)
     
