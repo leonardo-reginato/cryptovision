@@ -1,0 +1,59 @@
+seed: 42
+verbose: false
+version: auto  
+project: "BEM - Results"
+pretrain: "rn50v2"                 # rn50v2 |  rn152v2 | efv2b0 | efv2b1 | vgg16
+save: true
+fine_tune: False
+image_size: 128
+
+name: "CVision_TrainMaxEpochs"
+tags: ['TrainMaxEpochs', 'DropOut.4']
+
+# Data
+test_size: 0.15
+validation_size: 0.15
+batch_size: 32
+samples_threshold: 90
+
+# Model
+cvision_model: basic
+dropout: 0.4
+shared_layer_neurons: 1024
+
+# Compile
+lr: 0.0001
+loss: "categorical_focal_crossentropy"
+metrics: ["accuracy", "Precision", "Recall", "AUC"]
+loss_weights: [1.0, 1.5, 2.0]
+
+# Training
+epochs: 20
+
+# Early stopping
+patience: 3
+early_stop_monitor: "val_loss"
+restore_best_weights: true
+
+# Reduce learning rate
+reduce_lr_monitor: "val_loss"
+lr_factor: 0.5
+lr_patience: 3
+lr_min: 0.000001
+
+# Checkpoint
+checkpoint_monitor: "val_loss"
+save_best_only: true
+checkpoint_mode: "min"
+
+# Fine-tuning
+ftune:
+  epochs: 20
+  layers: 15
+  lr: 0.00001
+  patience: 4
+  loss: "categorical_focal_crossentropy"
+  metrics: ["accuracy", "Precision", "Recall", "AUC"]
+  loss_weights: [1.0, 1.5, 2.0]
+  checkpoint_monitor: "val_loss"
+  save_best_only: true
