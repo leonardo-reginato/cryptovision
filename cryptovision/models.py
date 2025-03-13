@@ -67,8 +67,43 @@ class CryptoVisionModels:
         )
         
         # Global pooling from feature extractor output
-        features = layers.GlobalMaxPooling2D(name='GlobMaxPool2D')(feature_extractor.output
+        features = layers.GlobalMaxPool2D(name='GlobMaxPool2D')(feature_extractor.output
         )
+        
+        # Shared layers
+        shared_layer = CryptoVisionModels.dense_block(
+            features, 'shared_layer', shared_layer_neurons or features.shape[-1], dropout
+        )
+        
+        # Family, Genus, Species outputs
+        family_output = layers.Dense(output_neurons[0], activation='softmax', name='family')(shared_layer)
+        genus_output = layers.Dense(output_neurons[1], activation='softmax', name='genus')(shared_layer)
+        species_output = layers.Dense(output_neurons[2], activation='softmax', name='species')(shared_layer)
+        
+        return keras_models.Model(
+            feature_extractor.input, 
+            [family_output, genus_output, species_output], 
+            name=name or 'CVisionBasic'
+        )
+
+    @staticmethod
+    def basicV2(imagenet_name:str, output_neurons:tuple, input_shape:tuple[int]=(224, 224, 224), dropout:float=0.3, name:str=None, augmentation=None, trainable:bool=False, shared_layer_neurons=None):
+        
+        # Load pretrained backbone and preprocessing function
+        imagenet_model, preprocess = CryptoVisionModels.backbone_and_preprocess(imagenet_name, input_shape)
+        imagenet_model.trainable = trainable
+        
+        # Create backbone feature extractor model
+        feature_extractor = CryptoVisionModels.build_feature_extractor(
+            imagenet_model, preprocess, input_shape, name='pretrain', augmentation=augmentation
+        )
+        
+        # Global pooling from feature extractor output
+        features = layers.GlobalMaxPool2D(name='GlobMaxPool2D')(feature_extractor.output
+        )
+        
+        features = layers.BatchNormalization()(features)
+        features = layers.Dropout(dropout)(features)
         
         # Shared layers
         shared_layer = CryptoVisionModels.dense_block(
