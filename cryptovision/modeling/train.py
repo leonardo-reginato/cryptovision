@@ -1,265 +1,318 @@
-from pathlib import Path
-import itertools
+import os
 import json
-import tensorflow as tf
-import typer
-from loguru import logger
-from sklearn.metrics import classification_report, confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from tensorflow.keras.regularizers import l1_l2
-from wandb.integration.keras import WandbMetricsLogger
+import yaml
 import wandb
-from cryptovision.config import MODEL_PARAMS, MODELS_DIR, PROCESSED_DATA_DIR
+import random
+import datetime
+import numpy as np
+import tensorflow as tf
+from loguru import logger
+from wandb.integration.keras import WandbMetricsLogger
+from cryptovision import tools
+
+from tensorflow.keras import layers                         # type: ignore
+from tensorflow.keras import applications as keras_apps     # type: ignore
+
+from cryptovision.models import CryptoVisionModels as cv_models
+import cryptovision.dataset as dataset
+
+import warnings
 
 
-app = typer.Typer()
+SEED = 42
+
+# Python random seed
+random.seed(SEED)
+
+# NumPy random seed
+np.random.seed(SEED)
+
+# TensorFlow random seed
+tf.random.set_seed(SEED)
+
+# Set environment variable for deterministic operations
+os.environ['TF_DETERMINISTIC_OPS'] = '1'
+
+# Enable mixed precision for Apple Silicon
+tf.keras.mixed_precision.set_global_policy('mixed_float16')
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
+    
 wandb.require("core")
 
-pre_trained_models = {
-    "MobileNetV2": tf.keras.applications.MobileNetV2,
-    "ResNet50V2": tf.keras.applications.ResNet50V2,
-    "ResNet152V2": tf.keras.applications.ResNet152V2,
-    "EfficientNetV2B0": tf.keras.applications.EfficientNetV2B0,
-    "EfficientNetV2B2": tf.keras.applications.EfficientNetV2B2,
-    "EfficientNetV2S": tf.keras.applications.EfficientNetV2S,
-}
+def load_training_settings(settings_file_path: str) -> dict:
+    with open(settings_file_path, 'r') as f:
+        settings = yaml.load(f, Loader=yaml.SafeLoader)
+        
+    cvision_models = {
+        'basic': cv_models.basic,
+        'basicV2': cv_models.basicV2,
+        'hierar': cv_models.hierarchical,
+    }
+    
+    settings['cvision_model'] = cvision_models[settings['cvision_model']]
+    
+    if settings['version'] == 'auto':
+        settings['version'] = datetime.datetime.now().strftime('%y%m.%d.%H%M')
+    
+    return settings
 
-preprocess_inputs = {
-    "MobileNetV2": tf.keras.applications.mobilenet_v2.preprocess_input,
-    "ResNet50V2": tf.keras.applications.resnet_v2.preprocess_input,
-    "ResNet152V2": tf.keras.applications.resnet_v2.preprocess_input,
-    "EfficientNetV2B0": tf.keras.applications.efficientnet_v2.preprocess_input,
-    "EfficientNetV2B2": tf.keras.applications.efficientnet_v2.preprocess_input,
-    "EfficientNetV2S": tf.keras.applications.efficientnet_v2.preprocess_input,
-}
-
-dense_layers_options = [1, 2, 3]
-neurons_options = [64, 128, 256, 512, 1024, 2048]
-dropout_options = [0.2]
-batch_norm_options = [True]
-unfreeze_layers_options = [None, 5, 10, 20, 30]
-
-@app.command()
-def main(
-    train_dir: Path = PROCESSED_DATA_DIR / "train",
-    valid_dir: Path = PROCESSED_DATA_DIR / "valid",
-    test_dir: Path = PROCESSED_DATA_DIR / "test",
+def create_augmentation_layer (
+    seed:int=42, zoom_factor:tuple[int]=(0.05, 0.1), 
+    contrast:float=0.2, brightness:float=0.2, rotation:float=0.1, 
+    translation:float=0.1, image_size:int=224, gauss_noise:float=0.2,
 ):
-    """Main function to train the model."""
-
-    # Load Train & Test Datasets
-    train_ds = tf.keras.utils.image_dataset_from_directory(
-        train_dir,
-        labels="inferred",
-        label_mode="categorical",
-        batch_size=MODEL_PARAMS["batch_size"],
-        image_size=MODEL_PARAMS["image_shape"],
-        shuffle=True,
-        seed=42,
-        #validation_split=0.2,
-        #subset="training",
-        interpolation="bilinear",
+    
+    augmentation_layer = tf.keras.Sequential(
+        [
+           layers.RandomFlip("horizontal", seed=seed),
+            layers.RandomRotation(rotation, seed=seed),
+            layers.RandomZoom(height_factor=zoom_factor, width_factor=zoom_factor, seed=seed),  # Wider zoom range
+            layers.RandomContrast(contrast, seed=seed),
+            layers.RandomBrightness(brightness, seed=seed),
+            layers.RandomTranslation(translation, translation, seed=seed),
+            layers.RandomCrop(image_size, image_size, seed=seed),
+            layers.GaussianNoise(gauss_noise, seed=seed), 
+        ]
     )
+    
+    return augmentation_layer
 
-    valid_ds = tf.keras.utils.image_dataset_from_directory(
-        valid_dir,
-        labels="inferred",
-        label_mode="categorical",
-        batch_size=MODEL_PARAMS["batch_size"],
-        image_size=MODEL_PARAMS["image_shape"],
-        shuffle=True,
-        seed=42,
-        #validation_split=0.2,
-        #subset="validation",
-        interpolation="bilinear",
-    )
-
-    test_ds = tf.keras.utils.image_dataset_from_directory(
-        test_dir,
-        labels="inferred",
-        label_mode="categorical",
-        batch_size=MODEL_PARAMS["batch_size"],
-        image_size=MODEL_PARAMS["image_shape"],
-    )
-
-    class_names = train_ds.class_names
-    logger.success("Train and Test Datasets Loaded")
-
-    # Autotune
-    AUTOTUNE = tf.data.AUTOTUNE
-    train_ds = train_ds.cache().shuffle(1000).prefetch(buffer_size=AUTOTUNE)
-    valid_ds = valid_ds.cache().prefetch(buffer_size=AUTOTUNE)
-    test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
-
-    # Iterate over all combinations of hyperparameters
-    for model_name, dense_layers, dropout, batch_norm, unfreeze_layers in itertools.product(
-        pre_trained_models.keys(),
-        dense_layers_options,
-        dropout_options,
-        batch_norm_options,
-        unfreeze_layers_options,
-    ):
-        pre_trained_model = pre_trained_models[model_name]
-        preprocess_input = preprocess_inputs[model_name]
-
-        neurons_list = list(
-            itertools.combinations_with_replacement(neurons_options, dense_layers)
+def wandb_training_pipeline(project, name, tags, model, settings, data, save_mode=True):
+    
+    with wandb.init(project=project, name=name, config=settings, tags=tags) as run:
+        
+        logger.info(f"Wandb run started:{run.name} | ID:{run.id}")
+        
+        logger.info(model.summary(show_trainable=True))
+        
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=settings['lr']),
+            loss={
+                'family': settings['loss'],
+                'genus': settings['loss'],
+                'species': settings['loss'],
+            },
+            metrics={
+                'family': settings['metrics'],
+                'genus': settings['metrics'],
+                'species': settings['metrics'],
+            },
+            loss_weights={
+                'family': settings['loss_weights'][0],
+                'genus': settings['loss_weights'][1],
+                'species': settings['loss_weights'][2],
+            },
         )
-        for neurons in neurons_list:
-            wandb.init(
-                project="CryptoVision 2.0",
-                config={
-                    "pre_trained_model": model_name,
-                    "dense_layers": dense_layers,
-                    "neurons": neurons,
-                    "dropout": dropout,
-                    "batch_norm": batch_norm,
+        
+        new_model_path = f"models/{project}/{run.name}_{settings['version']}"
+        os.makedirs(new_model_path, exist_ok=True)
+        
+        model.save(f"{new_model_path}/model_pretrain.keras") if save_mode else None
+        
+        wandb_callback = WandbMetricsLogger()
+        
+        #logger.info("Calculating pre-training metrics...")
+        #pre_train_metrics = model.evaluate(data['test'], verbose=0, return_dict=True)
+        #for metric, value in pre_train_metrics.items():
+        #    wandb.log({f"pre_train_test/{metric}": value})
+        #    logger.info(f"pre_train_test/{metric}: {value:.3f}")
+        
+        early_stopping = tf.keras.callbacks.EarlyStopping(
+            monitor=settings['early_stop_monitor'],
+            patience=settings['patience'],
+            restore_best_weights=True,
+        )
+        
+        reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
+            monitor=settings['reduce_lr_monitor'],
+            factor=settings['lr_factor'],
+            patience=settings['lr_patience'],
+            min_lr=settings['lr_min'],
+        )
+        
+        checkpoint = tf.keras.callbacks.ModelCheckpoint(
+            f"{new_model_path}/model_pretrain.keras",
+            monitor=settings['checkpoint_monitor'],
+            save_best_only=settings['save_best_only'] if save_mode else False,
+            mode=settings['checkpoint_mode'],
+            verbose=0
+        )
+        
+        history = model.fit(
+            data['train'],
+            validation_data=data['val'],
+            epochs=settings['epochs'],
+            callbacks=[
+                wandb_callback, 
+                early_stopping,
+                #taxon_alignment,
+                reduce_lr, 
+                checkpoint, 
+                tools.TQDMProgressBar()
+            ],
+            verbose=0
+        )
+        
+        # save history as json
+        with open(f"{new_model_path}/history.json", "w") as f:
+            json.dump(history.history, f)
+        
+        logger.info("Calculating post-training metrics...")
+        post_training_metrics = model.evaluate(data['test'], verbose=0, return_dict=True)
+        for name, value in post_training_metrics.items():
+            wandb.log({f"post_train_test/{name}": value})
+            logger.info(f"post_train_test/{name}: {value:.3f}")
+            
+        if settings['fine_tune']:
+
+            logger.info("Fine-tuning model...")
+            
+            pretrain = model.layers[2]
+            pretrain.trainable = True
+            for layer in pretrain.layers[:-settings['ftune']['layers']]:
+                layer.trainable = False
+                
+            logger.info(model.summary(show_trainable=True))
+            
+            model.compile(
+                optimizer=tf.keras.optimizers.RMSprop(learning_rate=settings['ftune']['lr']),
+                loss={
+                    'family': settings['ftune']['loss'],
+                    'genus': settings['ftune']['loss'],
+                    'species': settings['ftune']['loss'],
+                },
+                metrics={
+                    'family': settings['ftune']['metrics'],
+                    'genus': settings['ftune']['metrics'],
+                    'species': settings['ftune']['metrics'],
+                },
+                loss_weights={
+                    'family': settings['ftune']['loss_weights'][0],
+                    'genus': settings['ftune']['loss_weights'][1],
+                    'species': settings['ftune']['loss_weights'][2],
                 },
             )
 
-            # Data Augmentation and Preprocessing
-            data_augmentation = tf.keras.Sequential(
-                [
-                    tf.keras.layers.RandomFlip("horizontal"),
-                    tf.keras.layers.RandomRotation(0.2),
-                    tf.keras.layers.RandomZoom(0.2),
-                    tf.keras.layers.RandomTranslation(0.1, 0.1),
-                    tf.keras.layers.RandomContrast(0.2),
-                    tf.keras.layers.RandomBrightness(0.2),
-                    tf.keras.layers.RandomCrop(224, 224),
-                ]
+            wandb_callback = WandbMetricsLogger()
+
+            checkpoint = tf.keras.callbacks.ModelCheckpoint(
+                f"{new_model_path}/model_ftune.keras",
+                monitor=settings['checkpoint_monitor'],
+                save_best_only=settings['save_best_only'],
+                mode=settings['checkpoint_mode'],
+                verbose=0
             )
-
-            # Create Model
-            logger.info(
-                f"Creating Model with {model_name}, {dense_layers} dense layers, dropout {dropout}, batch_norm {batch_norm}"
-            )
-            base_model = pre_trained_model(
-                include_top=False,
-                weights="imagenet",
-                pooling="avg",
-                input_shape=MODEL_PARAMS["image_shape"] + (3,),
-            )
-
-            if unfreeze_layers is not None:
-                base_model.trainable = True
-                for layer in base_model.layers[:unfreeze_layers]:
-                    layer.trainable = False
-            else:
-                base_model.trainable = False
-
-            inputs = tf.keras.Input(shape=MODEL_PARAMS["image_shape"] + (3,))
-            x = data_augmentation(inputs)
-            x = preprocess_input(x)
-            x = base_model(x, training=True)
-            x = tf.keras.layers.Dropout(dropout)(x)
-
-            for neuron_count in neurons:
-                x = tf.keras.layers.Dense(
-                    neuron_count,
-                    activation="relu",
-                    kernel_regularizer=l1_l2(l1=0.001, l2=0.001),
-                )(x)
-                if batch_norm:
-                    x = tf.keras.layers.BatchNormalization()(x)
-                x = tf.keras.layers.Dropout(dropout)(x)
-
-            output = tf.keras.layers.Dense(len(class_names), activation="softmax")(x)
-            model = tf.keras.models.Model(inputs=inputs, outputs=output)
-
-            logger.info(model.summary())
-
-            # Compile Model
-            optimizer = tf.keras.optimizers.Adam(
-                learning_rate=MODEL_PARAMS["learning_rate"]
-            )
-            model.compile(
-                optimizer=optimizer,
-                loss="categorical_crossentropy",
-                metrics=["accuracy", "AUC", "Precision", "Recall"],
-            )
-
-            logger.success("Model Created")
-            logger.info("Starting model training...")
-
-            # Define callbacks
-            reduce_lr = ReduceLROnPlateau(
-                monitor="val_loss",
-                factor=0.2,
-                patience=MODEL_PARAMS["lr_patience"],
-                min_lr=1e-6,
-            )
-            early_stop = EarlyStopping(
-                monitor="val_loss",
-                patience=MODEL_PARAMS["early_stopping_patience"],
+            
+            early_stopping = tf.keras.callbacks.EarlyStopping(
+                monitor=settings['early_stop_monitor'],
+                patience=settings['ftune']['patience'],
                 restore_best_weights=True,
             )
-            wandb_logger = WandbMetricsLogger()
-
-            # Train the model
-            history = model.fit(
-                train_ds,
-                epochs=MODEL_PARAMS["epochs"],
-                validation_data=valid_ds,
-                # callbacks=[early_stop, reduce_lr, wandb_logger],
-                callbacks=[
-                    early_stop,
-                    reduce_lr,
-                    wandb_logger,
-                ],
-            )
-
-            logger.success("Model Training Completed")
-
-            # Save Model
-            model_name = f"{model_name}_layers{dense_layers}_neurons{neurons}_dropout{dropout}_batchnorm{batch_norm}.keras"
-            model.save(MODELS_DIR / model_name)
-            logger.success(f"Model {model_name} Saved")
             
+            total_epochs = settings['ftune']['epochs'] + settings['epochs']
 
-            # Evaluate Model
-            logger.info("Evaluating Model...")
-            evaluation_results = model.evaluate(test_ds, verbose=0)
-            test_loss = evaluation_results[0]
-            test_accuracy = evaluation_results[1]
-            logger.info(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
+            ftun_history = model.fit(
+                data['train'],
+                validation_data=data['val'],
+                epochs=total_epochs,
+                initial_epoch=settings['epochs'],
+                callbacks=[wandb_callback, early_stopping, reduce_lr, checkpoint, tools.TQDMProgressBar()],
+                verbose=0
+            )
+            
+            logger.info("Calculating fine-tuning metrics...")
+            ftun_metrics = model.evaluate(data['test'], verbose=0, return_dict=True)
+            for name, value in ftun_metrics.items():
+                wandb.log({f"ftun_test/{name}": value})
+                logger.info(f"ftun_test/{name}: {value:.3f}")
+                
+            # save history as json
+            with open(f"{new_model_path}/ftun_history.json", "w") as f:
+                json.dump(ftun_history.history, f)
 
-            # Get predictions and true labels
-            y_pred = tf.argmax(model.predict(test_ds, verbose=0), axis=1).numpy()
-            y_true = tf.concat([y for x, y in test_ds], axis=0)
-            y_true = tf.argmax(y_true, axis=1).numpy()
-
-            # Confusion Matrix
-            conf_matrix = confusion_matrix(y_true, y_pred)
-            plt.figure(figsize=(10, 8))
-            sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", xticklabels=class_names, yticklabels=class_names)
-            plt.xlabel("Predicted")
-            plt.ylabel("True")
-            plt.title("Confusion Matrix")
-            conf_matrix_path = MODELS_DIR / f"{model_name}_confusion_matrix.png"
-            plt.savefig(conf_matrix_path)
-            plt.close()
-            logger.info(f"Confusion matrix saved to {conf_matrix_path}")
-
-            # Classification Report
-            class_report = classification_report(y_true, y_pred, target_names=class_names)
-            class_report_path = MODELS_DIR / f"{model_name}_classification_report.txt"
-            with open(class_report_path, "w") as f:
-                f.write(class_report)
-            logger.info(f"Classification report saved to {class_report_path}")
-
-            # Save Class Names
-            class_names_path = MODELS_DIR / f"{model_name}_class_names.json"
-            with open(class_names_path, "w") as f:
-                json.dump(class_names, f)
-            logger.info(f"Class names saved to {class_names_path}")
+            logger.info("Fine-tuning finished.")
+        
+        logger.success("Wandb Training finished.")
+        
+    wandb.finish()
 
 
-            # Finish Wandb
-            wandb.finish()
+if __name__ == '__main__':
 
-
-if __name__ == "__main__":
-    app()
+    logger.info("Starting training...")
+    
+    settings = load_training_settings('/Users/leonardo/Documents/Projects/cryptovision/cryptovision/settings.yaml')
+    
+    if settings['suppress_warnings']:
+        # Set TensorFlow logging level to suppress warnings
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+        warnings.filterwarnings("ignore")
+        
+    data = {}
+    tf_data = {}
+    
+    data['train'], data['val'], data['test'] = dataset.main(
+        min_samples=settings['samples_threshold'],
+        return_split=True,
+        stratify_by='species',
+        test_size=settings['test_size'],
+        val_size=settings['validation_size'],
+        random_state=SEED
+    )
+    
+    tf_data['train'] = tools.tensorflow_dataset(
+        data['train'],
+        batch_size=settings['batch_size'],
+        image_size=(settings['image_size'], settings['image_size']),
+        shuffle=False,
+    )
+    
+    tf_data['val'] = tools.tensorflow_dataset(
+        data['val'],
+        batch_size=settings['batch_size'],
+        image_size=(settings['image_size'], settings['image_size']),
+        shuffle=False,
+    )
+    
+    tf_data['test'] = tools.tensorflow_dataset(
+        data['test'],
+        batch_size=settings['batch_size'],
+        image_size=(settings['image_size'], settings['image_size']),
+        shuffle=False,
+    )
+    
+    augmentation_layer = create_augmentation_layer(image_size=settings['image_size'])
+    
+    model = settings['cvision_model'](
+        imagenet_name=settings['pretrain'],
+        augmentation=augmentation_layer,
+        input_shape=(settings['image_size'], settings['image_size'], 3),
+        dropout=settings['dropout'],
+        shared_layer_neurons=settings['shared_layer_neurons'],
+        output_neurons=(
+            data['test']['family'].nunique(),
+            data['test']['genus'].nunique(),
+            data['test']['species'].nunique(),
+        )
+    )
+    
+    settings['families'] = sorted(data['test']['family'].unique().tolist())
+    settings['genera'] = sorted(data['test']['genus'].unique().tolist())
+    settings['species'] = sorted(data['test']['species'].unique().tolist())
+    
+    _, _, _, settings['genus_to_family'], settings['species_to_genus'] = tools.get_taxonomic_mappings_from_dataframe(data['test'])
+    
+    wandb_training_pipeline(
+        project=settings['project'],
+        name=settings['name'],
+        model=model,
+        tags=settings['tags'],
+        settings=settings,
+        data=tf_data,
+        save_mode=False
+    )
+    
+    logger.success("Training Script finished.")
