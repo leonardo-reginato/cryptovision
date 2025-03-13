@@ -62,7 +62,7 @@ class CryptoVisionModels:
         imagenet_model.trainable = trainable
         
         # Create backbone feature extractor model
-        feature_extractor = CryptoVisionModels.build_backbone_feature_extractor(
+        feature_extractor = CryptoVisionModels.build_feature_extractor(
             imagenet_model, preprocess, input_shape, name='pretrain', augmentation=augmentation
         )
         
@@ -94,7 +94,7 @@ class CryptoVisionModels:
         imagenet_model.trainable = trainable
         
         # Create backbone feature extractor model
-        feature_extractor = CryptoVisionModels.build_backbone_feature_extractor(
+        feature_extractor = CryptoVisionModels.build_feature_extractor(
             imagenet_model, preprocess, input_shape, name='pretrain', augmentation=augmentation
         )
         
@@ -123,4 +123,3 @@ class CryptoVisionModels:
             [family_output, genus_output, species_output], 
             name=name or 'CVisionHierarchical'
         )
-
