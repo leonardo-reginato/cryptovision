@@ -17,6 +17,8 @@ from tensorflow.keras.saving import register_keras_serializable     # type: igno
 from cryptovision import models
 import cryptovision.dataset as dataset
 
+import warnings
+
 SEED = 42
 
 # Python random seed
@@ -30,6 +32,10 @@ tf.random.set_seed(SEED)
 
 # Set environment variable for deterministic operations
 os.environ['TF_DETERMINISTIC_OPS'] = '1'
+
+# Set TensorFlow logging level to suppress warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+warnings.filterwarnings("ignore")
 
 # Enable mixed precision for Apple Silicon
 tf.keras.mixed_precision.set_global_policy('mixed_float16')
@@ -46,28 +52,29 @@ if __name__ == '__main__':
         "seed": SEED,
         "verbose": 0,
         "version": f"v{datetime.datetime.now().strftime('%y%m.%d.%H%M')}",
-        "project": 'DataSet Comparison',
-        "pretrain": "RN152v2",
+        "project": 'BEM - Results',
+        "pretrain": "RN50v2",
         "finetune": True,
         
         "model": {
-            "function": models.basic_multioutput,
+            "function": models.basic,
             "args": {
-                "dropout_rate": 0.3,
+                "dropout_rate": 0.4,
+                "shared_units": 1024,
             },
             "save": True,
         },
         
         "image": {
-            "size": (350, 350),
-            "shape": (350, 350, 3),
+            "size": (128, 128),
+            "shape": (128, 128, 3),
         },
        
         "dataset": {
             "version": "v2.0.0",
             "test_size": .15,
             "validation_size": .15,
-            "batch_size": 64,
+            "batch_size": 32,
             "class_samples_threshold": 90,
             "stratify_by": 'folder_label',
             "sources": ['fish_functions_v02','web', 'inaturalist_v03',],
@@ -76,9 +83,9 @@ if __name__ == '__main__':
         "compile": {
             "lr": 1e-4,
             "loss": {
-                "family": "categorical_focal_crossentropy",
-                "genus": "categorical_focal_crossentropy",
-                "species": "categorical_focal_crossentropy",
+                "family": tf.keras.losses.CategoricalFocalCrossentropy(label_smoothing=0.1),
+                "genus": tf.keras.losses.CategoricalFocalCrossentropy(label_smoothing=0.1),
+                "species": tf.keras.losses.CategoricalFocalCrossentropy(label_smoothing=0.1),
             },
             "metrics": {
                 "family": ["accuracy", "AUC", "Precision", "Recall"],
@@ -98,7 +105,7 @@ if __name__ == '__main__':
         
         "early_stop": {
             "monitor": "val_loss",
-            "patience": 5,
+            "patience": 4,
             "restore_best_weights": True           
         },
         
@@ -116,15 +123,15 @@ if __name__ == '__main__':
         }, 
     
         "fine_tune": {
-            "epochs": 15,
-            "layers": 30,
+            "epochs": 10,
+            "layers": 15,
             "lr": 1e-5,
             "pretrain_layer": "resnet50v2",
-            "patience": 7
+            "patience": 4
         },
     }
     
-    df = dataset.main(min_samples=SETUP['dataset']['class_samples_threshold'],)
+    df = dataset.main(min_samples=SETUP['dataset']['class_samples_threshold'])
     
     train_df, val_df, test_df = tools.split_dataframe(
         df, 
@@ -238,8 +245,7 @@ if __name__ == '__main__':
         name='augmentation'
     )
     
-    #NICKNAME = f"{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
-    NICKNAME = "DataSetClean_M_v7"
+    NICKNAME = f"{SETUP['model']['function'].__name__}_{SETUP['pretrain']}_{SETUP['image']['size'][0]}_{SETUP['version']}"
     TAGS = [SETUP['pretrain']]
            
     with wandb.init(project=SETUP['project'], name=NICKNAME, config={**SETUP}, tags=TAGS) as run:
@@ -254,6 +260,7 @@ if __name__ == '__main__':
             preprocess = pretrain_models[SETUP['pretrain']]['preprocess'],
             augmentation = augmentation,
             input_shape = SETUP['image']['shape'],
+            shared_units = SETUP['model']['args']['shared_units'],
             output_units = [
                 len(names['family']),
                 len(names['genus']),
@@ -346,7 +353,7 @@ if __name__ == '__main__':
             
             ftun_results = model.evaluate(test_ds, verbose=0, return_dict=True)
         
-            for name, value in test_results.items():
+            for name, value in ftun_results.items():
                 wandb.log({f"ftun_test/{name}": value})
                 logger.info(f"Fine Tuned Test {name}: {value:.3f}")
             
