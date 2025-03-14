@@ -134,7 +134,7 @@ def wandb_training_pipeline(project, name, tags, model, settings, data, save_mod
         )
         
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            f"{new_model_path}/model_pretrain.keras",
+            f"{new_model_path}/model_trained.keras",
             monitor=settings['checkpoint_monitor'],
             save_best_only=settings['save_best_only'] if save_mode else False,
             mode=settings['checkpoint_mode'],
