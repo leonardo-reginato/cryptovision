@@ -336,6 +336,16 @@ if __name__ == '__main__':
             settings['concat'] = row['concat']
             settings['loss_weights'] = row['loss_weights']
             
+            # Update settings tags with grid search parameters
+            settings['tags'] = [
+                f"FEATDP_{settings['features_dropout']}",
+                f"SHRDP_{settings['shared_dropout']}",
+                f"SHRNEU_{settings['shared_layer_neurons']}",
+                f"POOL_{settings['pooling_type']}",
+                f"CONCAT_{settings['concat']}",
+                f"LOSSW_{settings['loss_weights']}",
+            ]
+            
             # Train model
             model = settings['cvision_model'](
                 imagenet_name=settings['pretrain'],
