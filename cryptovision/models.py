@@ -43,19 +43,32 @@ class CryptoVisionModels:
         return keras_models.Model(inputs, x, name=name)
 
     @staticmethod
-    def dense_block(input_layer, name, units, dropout, activation='relu', norm=True):
+    def dense_block(input_layer, name, units, dropout=0.3, activation='relu', norm=True, **kwargs):
         """
-        Create a dense block with optional batch normalization and regularization.
+        Create a flexible dense block.
+
+        Parameters:
+        - input_layer: input tensor
+        - name: name of the dense layer
+        - units: number of units in dense layer
+        - dropout: dropout rate (0.0 disables dropout)
+        - activation: activation function
+        - norm: apply BatchNormalization if True
+        - **kwargs: passed to tf.keras.layers.Dense (e.g., kernel_regularizer, initializer, etc.)
+
+        Returns:
+        - output tensor
         """
-        x = layers.Dense(units, name=name)(input_layer)
+        x = layers.Dense(units, name=name, **kwargs)(input_layer)
         if norm:
-            x = layers.BatchNormalization()(x)
-        x = layers.Activation(activation)(x)
-        x = layers.Dropout(dropout)(x)
+            x = layers.BatchNormalization(name=f"{name}_BatchNorm")(x)
+        x = layers.Activation(activation, name=f"{name}_Activ_{activation}")(x)
+        if dropout and dropout > 0:
+            x = layers.Dropout(dropout, name=f"{name}_DropOut_{dropout}")(x)
         return x
 
     @staticmethod
-    def basic(imagenet_name:str, output_neurons:tuple, input_shape:tuple[int]=(224, 224, 224), dropout:float=0.3, name:str=None, augmentation=None, trainable:bool=False, shared_layer_neurons=None):
+    def basic(imagenet_name:str, output_neurons:tuple, input_shape:tuple[int]=(224, 224, 224), shared_dropout:float=0.3, feat_dropout:float=0.3, pooling_type:str='max', concatenate:bool=False, name:str=None, augmentation=None, trainable:bool=False, shared_layer_neurons=None):
         
         # Load pretrained backbone and preprocessing function
         imagenet_model, preprocess = CryptoVisionModels.backbone_and_preprocess(imagenet_name, input_shape)
@@ -67,94 +80,37 @@ class CryptoVisionModels:
         )
         
         # Global pooling from feature extractor output
-        features = layers.GlobalMaxPool2D(name='GlobMaxPool2D')(feature_extractor.output
-        )
+        if pooling_type == 'max':
+            features = layers.GlobalMaxPool2D(name='GlobMaxPool2D')(feature_extractor.output)
+        elif pooling_type == 'avg':
+            features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(feature_extractor.output)
+        else:
+            raise ValueError(f"Invalid pooling type: {pooling_type}. Choose 'max' or 'avg'.")
+        
+        # Features dropout
+        if feat_dropout and feat_dropout > 0:
+            features = layers.BatchNormalization(name='features_BatchNorm')(features)
+            features = layers.Dropout(feat_dropout, name=f'features_DropOut_{feat_dropout}')(features)
         
         # Shared layers
         shared_layer = CryptoVisionModels.dense_block(
-            features, 'shared_layer', shared_layer_neurons or features.shape[-1], dropout
-        )
-        
-        # Family, Genus, Species outputs
-        family_output = layers.Dense(output_neurons[0], activation='softmax', name='family')(shared_layer)
-        genus_output = layers.Dense(output_neurons[1], activation='softmax', name='genus')(shared_layer)
-        species_output = layers.Dense(output_neurons[2], activation='softmax', name='species')(shared_layer)
-        
-        return keras_models.Model(
-            feature_extractor.input, 
-            [family_output, genus_output, species_output], 
-            name=name or 'CVisionBasic'
-        )
-
-    @staticmethod
-    def basicV2(imagenet_name:str, output_neurons:tuple, input_shape:tuple[int]=(224, 224, 224), dropout:float=0.3, name:str=None, augmentation=None, trainable:bool=False, shared_layer_neurons=None):
-        
-        # Load pretrained backbone and preprocessing function
-        imagenet_model, preprocess = CryptoVisionModels.backbone_and_preprocess(imagenet_name, input_shape)
-        imagenet_model.trainable = trainable
-        
-        # Create backbone feature extractor model
-        feature_extractor = CryptoVisionModels.build_feature_extractor(
-            imagenet_model, preprocess, input_shape, name='pretrain', augmentation=augmentation
-        )
-        
-        # Global pooling from feature extractor output
-        features = layers.GlobalMaxPool2D(name='GlobMaxPool2D')(feature_extractor.output
-        )
-        
-        features = layers.BatchNormalization()(features)
-        features = layers.Dropout(dropout)(features)
-        
-        # Shared layers
-        shared_layer = CryptoVisionModels.dense_block(
-            features, 'shared_layer', shared_layer_neurons or features.shape[-1], dropout
-        )
-        
-        # Family, Genus, Species outputs
-        family_output = layers.Dense(output_neurons[0], activation='softmax', name='family')(shared_layer)
-        genus_output = layers.Dense(output_neurons[1], activation='softmax', name='genus')(shared_layer)
-        species_output = layers.Dense(output_neurons[2], activation='softmax', name='species')(shared_layer)
-        
-        return keras_models.Model(
-            feature_extractor.input, 
-            [family_output, genus_output, species_output], 
-            name=name or 'CVisionBasic'
-        )
-
-    @staticmethod
-    def hierarchical(imagenet_name:str, output_neurons:tuple, input_shape:tuple[int]=(224, 224, 224), dropout:float=0.3, name:str=None, augmentation=None, trainable:bool=False, shared_layer_neurons=None):
-        
-        # Load pretrained backbone and preprocessing function
-        imagenet_model, preprocess = CryptoVisionModels.backbone_and_preprocess(imagenet_name, input_shape)
-        imagenet_model.trainable = trainable
-        
-        # Create backbone feature extractor model
-        feature_extractor = CryptoVisionModels.build_feature_extractor(
-            imagenet_model, preprocess, input_shape, name='pretrain', augmentation=augmentation
-        )
-        
-        # Global pooling from feature extractor output
-        features = layers.GlobalMaxPooling2D(name='GlobMaxPool2D')(feature_extractor.output
-        )
-        
-        # Shared layers
-        shared_layer = CryptoVisionModels.dense_block(
-            features, 'shared_layer', shared_layer_neurons or features.shape[-1], dropout
+            features, 'shared_layer', shared_layer_neurons or features.shape[-1], shared_dropout
         )
         
         # Family
         family_output = layers.Dense(output_neurons[0], activation='softmax', name='family')(shared_layer)
         
-        # Genus
-        genus_features = layers.Concatenate()([shared_layer, family_output])
-        genus_output = layers.Dense(output_neurons[1], activation='softmax', name='genus')(genus_features)
+        #  Genus
+        genus_input = layers.Concatenate(name='genus_input')([shared_layer, family_output]) if concatenate else genus_input = shared_layer
+        genus_output = layers.Dense(output_neurons[1], activation='softmax', name='genus')(genus_input)
         
         # Species
-        species_features = layers.Concatenate()([shared_layer, family_output, genus_output])
-        species_output = layers.Dense(output_neurons[2], activation='softmax', name='species')(species_features)
+        species_input = layers.Concatenate(name='species_input')([shared_layer, genus_output]) if concatenate else species_input = shared_layer
+        species_output = layers.Dense(output_neurons[2], activation='softmax', name='species')(species_input)
         
         return keras_models.Model(
             feature_extractor.input, 
             [family_output, genus_output, species_output], 
-            name=name or 'CVisionHierarchical'
+            name=name or 'CVisionBasic'
         )
+
