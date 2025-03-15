@@ -101,11 +101,17 @@ class CryptoVisionModels:
         family_output = layers.Dense(output_neurons[0], activation='softmax', name='family')(shared_layer)
         
         #  Genus
-        genus_input = layers.Concatenate(name='genus_input')([shared_layer, family_output]) if concatenate else genus_input = shared_layer
+        if concatenate:
+            genus_input = layers.Concatenate(name='genus_input')([shared_layer, family_output])
+        else:
+            genus_input = shared_layer
         genus_output = layers.Dense(output_neurons[1], activation='softmax', name='genus')(genus_input)
         
         # Species
-        species_input = layers.Concatenate(name='species_input')([shared_layer, genus_output]) if concatenate else species_input = shared_layer
+        if concatenate:
+            species_input = layers.Concatenate(name='species_input')([shared_layer, genus_output])
+        else:
+            species_input = shared_layer
         species_output = layers.Dense(output_neurons[2], activation='softmax', name='species')(species_input)
         
         return keras_models.Model(
