@@ -595,11 +595,11 @@ def analyze_taxonomic_misclassifications(
 
 
 class CryptoVisionAI:
-    def __init__(self, model_path, family_names, genus_names, species_names):
+    def __init__(self, model_path, family_names, genus_names, species_names, safe_mode=True):
         """
         Initialize the CryptoVisionAI class.
         """
-        self.model = tf.keras.models.load_model(model_path)
+        self.model = tf.keras.models.load_model(model_path, safe_mode=safe_mode)
         self.family_names = family_names
         self.genus_names = genus_names
         self.species_names = species_names
