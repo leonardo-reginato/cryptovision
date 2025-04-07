@@ -4,7 +4,7 @@
 
 # General Configuration
 project_name: "CVisionClassifier"  # Project name (used for wandb and directory organization)
-experiment_name: null       # Name of the experiment run or None
+experiment_name: 'CVIS'     # Name of the experiment run or None
 tags: []                    # List of tags for experiment categorization
 image_size: 128             # Target image size (both width and height)
 fine_tune: False            # Global flag to enable fine-tuning phase
@@ -51,7 +51,7 @@ loss_weights: [1.0, 1.0, 1.0]          # Loss weights for each output (family, g
 # Training Settings
 # =====================================================
 
-epochs: 30                  # Number of training epochs
+epochs: 3                  # Number of training epochs
 
 # Early Stopping Configuration
 early_stop:
