@@ -4,19 +4,16 @@ import yaml
 import wandb
 import random
 import datetime
-import pandas as pd
 import numpy as np
-import tensorflow as tf
 from loguru import logger
 from wandb.integration.keras import WandbMetricsLogger
-from cryptovision import tools
 
+import tensorflow as tf
 from tensorflow.keras import callbacks                      # type: ignore
-from tensorflow.keras import layers                         # type: ignore
-from tensorflow.keras import applications as keras_apps     # type: ignore
 
-from cryptovision.models import CryptoVisionModels as cv_models
+from cryptovision import tools
 import cryptovision.dataset as dataset
+from cryptovision.models import CryptoVisionModels as cv_models
 
 import warnings
 
