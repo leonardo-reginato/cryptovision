@@ -21,6 +21,28 @@ for gpu in gpus:
 
 
 class CryptoVisionModels:
+    
+    @staticmethod
+    def augmentation_layer(
+        seed:int=42, zoom_factor:tuple[int]=(0.05, 0.1), 
+        contrast:float=0.2, brightness:float=0.2, rotation:float=0.1, 
+        translation:float=0.1, image_size:int=224, gauss_noise:float=0.2,
+    ):
+        aug_layer = tf.keras.Sequential(
+            [
+            layers.RandomFlip("horizontal", seed=seed),
+                layers.RandomRotation(rotation, seed=seed),
+                layers.RandomZoom(height_factor=zoom_factor, width_factor=zoom_factor, seed=seed),  # Wider zoom range
+                layers.RandomContrast(contrast, seed=seed),
+                layers.RandomBrightness(brightness, seed=seed),
+                layers.RandomTranslation(translation, translation, seed=seed),
+                layers.RandomCrop(image_size, image_size, seed=seed),
+                layers.GaussianNoise(gauss_noise, seed=seed), 
+            ]
+        )
+        
+        return aug_layer
+        
     @staticmethod
     def backbone_and_preprocess(pretrain: str, image_shape=(224, 224, 3)):
         model_map = {
@@ -68,7 +90,64 @@ class CryptoVisionModels:
         return x
 
     @staticmethod
-    def basic(imagenet_name:str, output_neurons:tuple, input_shape:tuple[int]=(224, 224, 224), shared_dropout:float=0.3, feat_dropout:float=0.3, pooling_type:str='max', concatenate:bool=False, name:str=None, augmentation=None, trainable:bool=False, shared_layer_neurons=None):
+    def taxonomy_conditioned_attention(shared_features, conditioning_logits, attention_units=128, name_prefix="attn"):
+        """
+        Taxonomy-Conditioned Attention Block
+
+        Args:
+            shared_features: Tensor from shared CNN or dense layer.
+            conditioning_logits: Logits from higher taxonomy level (e.g., family).
+            attention_units: Size of intermediate projection layer.
+            name_prefix: Name prefix for attention block layers.
+
+        Returns:
+            Tensor with attention-modulated features.
+        """
+        x = layers.Dense(attention_units, activation='relu', name=f"{name_prefix}_cond_proj1")(conditioning_logits)
+        x = layers.Dense(shared_features.shape[-1], activation='sigmoid', name=f"{name_prefix}_cond_proj2")(x)
+        modulated = layers.Multiply(name=f"{name_prefix}_modulate")([shared_features, x])
+        return modulated
+
+    @staticmethod
+    def gated_hierarchical_fusion(shared_features, conditioning_logits, name_prefix="gated_fusion"):
+        """
+        Gated Hierarchical Fusion Block (corrected version)
+
+        Projects conditioning_logits into same dimensionality as shared_features,
+        learns a gate to modulate each contribution, and merges both adaptively.
+
+        Args:
+            shared_features: Tensor from shared CNN or dense layer (e.g., shape [None, 1024])
+            conditioning_logits: Output logits from higher taxonomy level (e.g., family/genus)
+            name_prefix: Prefix for layer names
+
+        Returns:
+            Fused feature tensor (same shape as shared_features)
+        """
+        shared_dim = shared_features.shape[-1]
+
+        # Project conditioning logits into feature space
+        cond_proj = layers.Dense(shared_dim, activation='relu', name=f"{name_prefix}_cond_proj")(conditioning_logits)
+
+        # Compute gate (how much to attend to conditioning info)
+        gate = layers.Dense(shared_dim, activation='sigmoid', name=f"{name_prefix}_gate")(conditioning_logits)
+
+        # Learn complementary gate for shared features
+        #gate_inv = layers.Lambda(lambda x: 1.0 - x, name=f"{name_prefix}_gate_inv")(gate)
+        #gate_inv = layers.Subtract(name=f"{name_prefix}_gate_inv")([tf.ones_like(gate), gate])
+        gate_inv = 1.0 - gate
+
+        # Apply gate to both paths
+        conditioned_mod = layers.Multiply(name=f"{name_prefix}_cond_path")([cond_proj, gate])
+        shared_mod = layers.Multiply(name=f"{name_prefix}_shared_path")([shared_features, gate_inv])
+
+        # Fuse both
+        fused = layers.Add(name=f"{name_prefix}_fusion")([conditioned_mod, shared_mod])
+
+        return fused
+
+    @staticmethod
+    def basic(imagenet_name:str, output_neurons:tuple, input_shape:tuple[int]=(224, 224, 224), shared_dropout:float=0.3, feat_dropout:float=0.3, pooling_type:str='max', architecture:bool=False, name:str=None, augmentation=None, trainable:bool=False, shared_layer_neurons=None):
         
         # Load pretrained backbone and preprocessing function
         imagenet_model, preprocess = CryptoVisionModels.backbone_and_preprocess(imagenet_name, input_shape)
@@ -101,15 +180,32 @@ class CryptoVisionModels:
         family_output = layers.Dense(output_neurons[0], activation='softmax', name='family')(shared_layer)
         
         #  Genus
-        if concatenate:
+        if architecture == 'concat':
             genus_input = layers.Concatenate(name='genus_input')([shared_layer, family_output])
+            
+        elif architecture == 'att':
+            genus_input = CryptoVisionModels.taxonomy_conditioned_attention(
+                shared_layer, family_output, name_prefix='genus_attn'
+            )
+        elif architecture == 'gated':
+            genus_input = CryptoVisionModels.gated_hierarchical_fusion(
+                shared_layer, family_output, name_prefix='genus_gated'
+            )
         else:
             genus_input = shared_layer
         genus_output = layers.Dense(output_neurons[1], activation='softmax', name='genus')(genus_input)
         
         # Species
-        if concatenate:
+        if architecture == 'concat':
             species_input = layers.Concatenate(name='species_input')([shared_layer, genus_output])
+        elif architecture == 'att':
+            species_input = CryptoVisionModels.taxonomy_conditioned_attention(
+                shared_layer, genus_output, name_prefix='species_attn'
+            )
+        elif architecture == 'gated':
+                species_input = CryptoVisionModels.gated_hierarchical_fusion(
+                    shared_layer, genus_output, name_prefix='species_gated'
+                )
         else:
             species_input = shared_layer
         species_output = layers.Dense(output_neurons[2], activation='softmax', name='species')(species_input)
