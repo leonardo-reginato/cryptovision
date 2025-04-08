@@ -4,15 +4,13 @@
 
 # General Configuration
 project_name: "CVisionClassifier"  # Project name (used for wandb and directory organization)
-experiment_name: 'CVIS'     # Name of the experiment run or None
+experiment_name: null       # Name of the experiment run or None
 tags: []                    # List of tags for experiment categorization
 image_size: 128             # Target image size (both width and height)
-fine_tune: False            # Global flag to enable fine-tuning phase
 verbose: false              # Verbosity flag for logging output
 version: auto               # Experiment version identifier (auto uses current timestamp)
 save: true                  # Flag to enable saving of models and artifacts
 seed: 42                    # Random seed for reproducibility
-src_path: "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/Images/Sources"  # Root directory for image data
 
 # Warnings and Logging
 suppress_warnings: true    # Suppress TensorFlow and other system warnings
@@ -21,7 +19,7 @@ suppress_warnings: true    # Suppress TensorFlow and other system warnings
 # Data Configuration
 # =====================================================
 
-# Data Splitting
+data_path: "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/Images/Sources"  # Root directory for image data
 test_size: 0.15            # Proportion of data to reserve for testing
 validation_size: 0.15      # Proportion of data to reserve for validation
 batch_size: 32             # Batch size for training and evaluation
@@ -39,7 +37,7 @@ shared_layer_neurons: 2048 # Number of neurons in the shared layers (e.g., 256, 
 pooling_type: "max"        # Pooling type; options: "avg" or "max"
 
 # =====================================================
-# Compilation Settings for Initial Training
+# Compilation Settings
 # =====================================================
 
 lr: 0.0001                 # Learning rate for initial training
@@ -51,13 +49,13 @@ loss_weights: [1.0, 1.0, 1.0]          # Loss weights for each output (family, g
 # Training Settings
 # =====================================================
 
-epochs: 3                  # Number of training epochs
+epochs: 10                  # Number of training epochs
 
 # Early Stopping Configuration
 early_stop:
   patience: 3               # Number of epochs with no improvement before stopping
   monitor: "val_loss"       # Metric to monitor for early stopping
-restore_best_weights: true  # Whether to restore the best model weights after stopping
+  best_weights: true        # Whether to restore the best model weights after stopping
 
 # Learning Rate Reduction Settings
 reduce_lr:
@@ -70,24 +68,33 @@ reduce_lr:
 checkpoint:
   monitor: "val_loss"       # Metric to monitor for saving model checkpoints
   mode: "min"               # Mode for checkpointing ('min' for loss, 'max' for accuracy, etc.)
-save_best_only: true        # Save only the model with the best performance
+  save_best_only: true      # Save only the model with the best performance
+  weights_only: true     # Save only the model weights during fine-tuning
 
 # =====================================================
 # Fine-Tuning Settings
 # =====================================================
 # These settings are specifically applied during the fine-tuning phase.
 
-ft:
-  model_path: "models/CVisionClassifier/CVis_BEM_320_2503.29.1518/model_ftune75_final.keras" # Path to the pre-trained model used for fine-tuning.
-  epochs: 15               # Number of epochs dedicated to fine-tuning
-  layers: 75               # Number of layers in the pre-trained module to keep trainable during fine-tuning
+finetune:
+  weights_path: "/Users/leonardo/Documents/Projects/cryptovision/models/CVisionClassifier/2504.08.1429/final.weights.h5" # Path to the pre-trained model used for fine-tuning.
+  epochs: 5               # Number of epochs dedicated to fine-tuning
+  unfreeze_layers: 75      # Number of layers in the pre-trained module to keep trainable during fine-tuning
   lr: 0.00001              # Learning rate for the fine-tuning phase
-  patience: 4              # Patience for early stopping during fine-tuning
   loss: "categorical_focal_crossentropy"  # Loss function for fine-tuning
   metrics: ["accuracy", "Precision", "Recall", "AUC"]  # Metrics to evaluate during fine-tuning
   loss_weights: [1.0, 1.0, 1.0]  # Loss weights during fine-tuning
-  checkpoint_monitor: "val_loss"  # Metric used to determine checkpoint saving during fine-tuning
-  save_best_only: true     # Only save the best model during fine-tuning
-  monitor: "val_loss"        # Metric to monitor for learning rate adjustments in fine-tuning
-  factor: 0.5              # Factor for reducing the learning rate during fine-tuning
-  min_lr: 0.0000001        # Minimum allowed learning rate during fine-tuning
+  early_stop:
+    patience: 4            # Patience for early stopping during fine-tuning
+    monitor: "val_loss"    # Metric to monitor for early stopping
+    best_weights: true     # Restore best weights after early stopping
+  reduce_lr:
+    monitor: "val_loss"    # Metric to monitor for reducing learning rate during fine-tuning
+    factor: 0.5            # Factor for reducing the learning rate during fine-tuning
+    patience: 2            # Patience (in epochs) before reducing the learning rate
+    min: 0.0000001         # Minimum learning rate allowed during fine-tuning
+  checkpoint:
+    monitor: "val_loss"    # Metric to monitor for saving model checkpoints during fine-tuning
+    mode: "min"            # Mode for checkpointing during fine-tuning
+    save_best_only: true   # Save only the best model during fine-tuning
+    weights_only: true     # Save only the model weights during fine-tuning

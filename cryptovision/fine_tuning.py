@@ -36,7 +36,7 @@ def load_settings(settings_file_path: str) -> dict:
     return settings
 
 
-def train_with_wandb(
+def finetune_with_wandb(
     project_name: str,
     experiment_name: str,
     tags: list,
@@ -53,71 +53,66 @@ def train_with_wandb(
         "tags": tags,
     }
     
+    ft_cfg = config['finetune']
+    
     # Log into wandb
     wandb.login()
     with wandb.init(**wandb_init_args) as run:
         if experiment_name is None:
             experiment_name = run.name
         logger.info(f"Wandb run started: {run.name} | ID: {run.id}")
-        logger.info("Model summary before training:")
+        logger.info("Model summary before fine-tuning:")
         logger.info(model.summary(show_trainable=True))
         
         output_dir = os.path.join("models", project_name, f"{config['version']}")
         os.makedirs(output_dir, exist_ok=True)
             
-        # Optional save the untrained model
-        if save:
-            model.save_weights(os.path.join(output_dir, "untrained.weights.h5"))
-            
         # Define callbacks
         wandb_cb = WandbMetricsLogger()
         early_stop = tf.keras.callbacks.EarlyStopping(
-            monitor=config['early_stop']['monitor'],
-            patience=config['early_stop']['patience'],
-            restore_best_weights=config['early_stop']['best_weights'],
+            monitor=ft_cfg['early_stop']['monitor'],
+            patience=ft_cfg['early_stop']['patience'],
+            restore_best_weights=ft_cfg['early_stop']['best_weights'],
         )
         reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
-            monitor=config['reduce_lr']['monitor'],
-            factor=config['reduce_lr']['factor'],
-            patience=config['reduce_lr']['patience'],
-            min_lr=config['reduce_lr']['min'],
+            monitor=ft_cfg['reduce_lr']['monitor'],
+            factor=ft_cfg['reduce_lr']['factor'],
+            patience=ft_cfg['reduce_lr']['patience'],
+            min_lr=ft_cfg['reduce_lr']['min'],
         )
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            os.path.join(output_dir, "checkpoint.weights.h5"),
-            monitor=config['checkpoint']['monitor'],
-            save_best_only=config['checkpoint']['save_best_only'],
-            mode=config['checkpoint']['mode'],
-            save_weights_only=config['checkpoint']['weights_only'],
+            os.path.join(output_dir, "model.weights.h5"),
+            monitor=ft_cfg['checkpoint']['monitor'],
+            save_best_only=ft_cfg['checkpoint']['save_best_only'],
+            mode=ft_cfg['checkpoint']['mode'],
+            save_weights_only=ft_cfg['checkpoint']['weights_only'],
             verbose=0
         )
         
         history = model.fit(
             datasets['train'],
             validation_data=datasets['val'],
-            epochs=config['epochs'],
+            initial_epoch=config['epochs'],
+            epochs=config['epochs'] + config['finetune']['epochs'],
             callbacks=[wandb_cb, early_stop, reduce_lr, checkpoint, tools.TQDMProgressBar()],
             verbose=0,
         )
         
-        # Save training history
-        with open(os.path.join(output_dir, "history.json"), "w") as f:
-            json.dump(history.history, f)
-            
-        # Save the final model weights
+        # Optional save the fine-tuned model
         if save:
-            model.save_weights(os.path.join(output_dir, "final.weights.h5"))
-            
-        # Save settings
-        with open(os.path.join(output_dir, "settings.json"), "w") as f:
-            json.dump(config, f)
+            model.save_weights(os.path.join(output_dir, "finetuned.weights.h5"))
+        
+        # Save training history
+        with open(os.path.join(output_dir, "finetune_history.json"), "w") as f:
+            json.dump(history.history, f)
         
         # Evaluate on the test set and log the results
         test_results = model.evaluate(datasets['test'], verbose=0, return_dict=True)
         for metric, value in test_results.items():
-            wandb.log({f"test/{metric}": value})
-            logger.info(f"test - {metric}: {value:.3f}")
+            wandb.log({f"ft_test/{metric}": value})
+            logger.info(f"ft_test - {metric}: {value:.3f}")
             
-        logger.success("wandb training pipeline completed successfully.")
+        logger.success("wandb fine-tuning pipeline completed successfully.")
         
     wandb.finish()
     return model
@@ -196,18 +191,32 @@ def main():
         )
     )
     
+    # Load pre-trained weights
+    model.load_weights(settings['finetune']['weights_path'])
+    
+    # Unfreeze the last layers for fine-tuning
+    pretrain = model.layers[2]
+    pretrain.trainable = True
+    for layer in pretrain.layers[:-settings['finetune']['unfreeze_layers']]:
+        layer.trainable = False
+    
+    # Compile the model
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=settings['lr']),
-        loss={key: settings['loss'] for key in ['family', 'genus', 'species']},
-        metrics={key: settings['metrics'] for key in ['family', 'genus', 'species']},
+        optimizer=tf.keras.optimizers.RMSprop(learning_rate=settings['finetune']['lr']),
+        loss={key: settings['finetune']['loss'] for key in ['family', 'genus', 'species']},
+        metrics={key: settings['finetune']['metrics'] for key in ['family', 'genus', 'species']},
         loss_weights={
-            'family': settings['loss_weights'][0],
-            'genus': settings['loss_weights'][1],
-            'species': settings['loss_weights'][2],
+            'family': settings['finetune']['loss_weights'][0],
+            'genus': settings['finetune']['loss_weights'][1],
+            'species': settings['finetune']['loss_weights'][2],
         },
     )
     
-    train_with_wandb(
+    # Re-do version from trained model
+    settings['version'] = os.path.basename(os.path.dirname(settings['finetune']['weights_path']))
+    
+    # Fine-tune the model with wandb 
+    finetune_with_wandb(
         project_name = settings['project_name'],
         experiment_name = settings['experiment_name'],
         tags = settings['tags'],
@@ -217,7 +226,7 @@ def main():
         save = True,
     )
     
-    logger.success("Training Script finished.")
+    logger.success("Fine Tuning Script finished.")
     
 if __name__ == "__main__":
     main()
