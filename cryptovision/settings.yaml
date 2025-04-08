@@ -98,3 +98,13 @@ finetune:
     mode: "min"            # Mode for checkpointing during fine-tuning
     save_best_only: true   # Save only the best model during fine-tuning
     weights_only: true     # Save only the model weights during fine-tuning
+
+# =====================================================
+# Grid Search Configuration
+# =====================================================
+
+grid_search:
+  architecture: ['gated', 'concat', 'std', 'att']
+  shared_dropout: [0, 0.2, 0.4]
+  features_dropout: [0, 0.2, 0.4]
+  pooling_type: ['max', 'avg']
