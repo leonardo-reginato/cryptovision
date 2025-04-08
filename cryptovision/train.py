@@ -135,8 +135,8 @@ def main():
     tf_data = {}
     
     # Load dataset
-    import cryptovision.dataset as dataset
-    data['train'], data['val'], data['test'] = dataset.load_dataset(
+    from cryptovision.dataset import load_dataset
+    data['train'], data['val'], data['test'] = load_dataset(
         src_path=settings['data_path'],
         min_samples=settings['samples_threshold'],
         return_split=True,
