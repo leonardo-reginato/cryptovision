@@ -49,7 +49,7 @@ loss_weights: [1.0, 1.0, 1.0]          # Loss weights for each output (family, g
 # Training Settings
 # =====================================================
 
-epochs: 10                  # Number of training epochs
+epochs: 15                  # Number of training epochs
 
 # Early Stopping Configuration
 early_stop:
