@@ -1,36 +1,20 @@
-import os
-import json
-import yaml
-import wandb
-import random
 import datetime
+import os
+import random
+import warnings
+from itertools import product
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import yaml
 from loguru import logger
-from itertools import product
-import warnings
 
-from cryptovision import tools
 import cryptovision.dataset as dataset
+from cryptovision import tools
 from cryptovision.models import CryptoVisionModels as cv_models
 from cryptovision.train import train_with_wandb
-from cryptovision.fine_tuning import finetune_with_wandb
 
-# Set random seeds for reproducibility
-SEED = 42
-random.seed(SEED)
-np.random.seed(SEED)
-tf.random.set_seed(SEED)
-os.environ['TF_DETERMINISTIC_OPS'] = '1'
-
-# Enable mixed precision
-tf.keras.mixed_precision.set_global_policy('mixed_float16')
-
-# Optionally limit GPU memory growth
-gpus = tf.config.experimental.list_physical_devices('GPU')
-for gpu in gpus:
-    tf.config.experimental.set_memory_growth(gpu, True)
 
 def load_training_settings(settings_file_path: str) -> dict:
     with open(settings_file_path, 'r') as f:
@@ -38,6 +22,12 @@ def load_training_settings(settings_file_path: str) -> dict:
     if settings.get('version') == 'auto':
         settings['version'] = datetime.datetime.now().strftime('%y%m.%d.%H%M')
     return settings
+
+def rename_image_path(df, src_path):
+    df['image_path'] = df['image_path'].apply(
+        lambda x: x.replace('/Volumes/T7_shield/CryptoVision/Data/Sources', src_path)
+    )
+    return df
 
 def main():
     logger.info('Starting grid search pipeline...')
@@ -52,61 +42,18 @@ def main():
     # Setup grid search parameters – either from the settings or defaults
     grid_params = settings.get('grid_search', {})
     arch_list = grid_params.get('architecture', ['gated', 'concat', 'std', 'att'])
-    shared_dp_list = grid_params.get('shared_dropout', [0, 0.2, 0.4])
-    feat_dp_list = grid_params.get('features_dropout', [0, 0.2, 0.4])
-    pooling_list = grid_params.get('pooling_type', ['max', 'avg'])
+    loss_list = grid_params.get('loss_type', ['cfc', 'tfcl'])
+    seed_list = grid_params.get('seed', [42, 1, 17])
 
-    combinations = list(product(arch_list, shared_dp_list, feat_dp_list, pooling_list))
+    combinations = list(product(arch_list, loss_list, seed_list))
 
     grid_csv_path = 'grid_search_results.csv'
     if not os.path.exists(grid_csv_path):
-        df_params = pd.DataFrame(combinations, columns=['architecture', 'shared_dropout', 'features_dropout', 'pooling_type'])
+        df_params = pd.DataFrame(combinations, columns=['architecture', 'loss_type', 'seed',])
         df_params['status'] = 'pending'
         df_params.to_csv(grid_csv_path, index=False)
     else:
         df_params = pd.read_csv(grid_csv_path)
-
-    # Load dataset
-    data = {}
-    tf_data = {}
-    data['train'], data['val'], data['test'] = dataset.load_dataset(
-        src_path=settings['data_path'],
-        min_samples=settings['samples_threshold'],
-        return_split=True,
-        stratify_by='species',
-        test_size=settings['test_size'],
-        val_size=settings['validation_size'],
-        random_state=SEED
-    )
-
-    def rename_image_path(df, src_path):
-        df['image_path'] = df['image_path'].apply(
-            lambda x: x.replace('/Volumes/T7_shield/CryptoVision/Data/Sources', src_path)
-        )
-        return df
-
-    data['train'] = rename_image_path(data['train'], settings['data_path'])
-    data['val'] = rename_image_path(data['val'], settings['data_path'])
-    data['test'] = rename_image_path(data['test'], settings['data_path'])
-
-    tf_data['train'] = tools.tensorflow_dataset(
-        data['train'],
-        batch_size=settings['batch_size'],
-        image_size=(settings['image_size'], settings['image_size']),
-        shuffle=False,
-    )
-    tf_data['val'] = tools.tensorflow_dataset(
-        data['val'],
-        batch_size=settings['batch_size'],
-        image_size=(settings['image_size'], settings['image_size']),
-        shuffle=False,
-    )
-    tf_data['test'] = tools.tensorflow_dataset(
-        data['test'],
-        batch_size=settings['batch_size'],
-        image_size=(settings['image_size'], settings['image_size']),
-        shuffle=False,
-    )
 
     total_combinations = len(df_params)
     for idx, row in df_params.iterrows():
@@ -116,36 +63,112 @@ def main():
         try:
             # Update settings with the current grid search parameters
             settings['architecture'] = row['architecture']
-            settings['shared_dropout'] = row['shared_dropout']
-            settings['features_dropout'] = row['features_dropout']
-            settings['pooling_type'] = row['pooling_type']
+            settings['loss_type'] = row['loss_type']
+            settings['seed'] = row['seed']
+            
+            SEED = settings['seed']
+            random.seed(SEED)
+            np.random.seed(SEED)
+            tf.random.set_seed(SEED)
 
             # Update tags with grid search information
             settings['tags'] = [
-                f"Arch_{settings['architecture']}",
-                f"SharedDP_{settings['shared_dropout']}",
-                f"FeatDP_{settings['features_dropout']}",
-                f"Pool_{settings['pooling_type']}",
+                f"{settings['architecture'].upper()}",
+                f"{settings['loss_type'].upper()}",
+                f"SEED{settings['seed']}",
                 'GridSearch'
             ]
+            
+            # Load dataset
+            data = {}
+            tf_data = {}
+            data['train'], data['val'], data['test'] = dataset.load_dataset(
+                src_path=settings['data_path'],
+                min_samples=settings['samples_threshold'],
+                return_split=True,
+                stratify_by='species',
+                test_size=settings['test_size'],
+                val_size=settings['validation_size'],
+                random_state=settings['seed']
+            )
+
+            data['train'] = rename_image_path(data['train'], settings['data_path'])
+            data['val'] = rename_image_path(data['val'], settings['data_path'])
+            data['test'] = rename_image_path(data['test'], settings['data_path'])
+
+            tf_data['train'] = tools.tensorflow_dataset(
+                data['train'],
+                batch_size=settings['batch_size'],
+                image_size=(settings['image_size'], settings['image_size']),
+                shuffle=False,
+            )
+            tf_data['val'] = tools.tensorflow_dataset(
+                data['val'],
+                batch_size=settings['batch_size'],
+                image_size=(settings['image_size'], settings['image_size']),
+                shuffle=False,
+            )
+            tf_data['test'] = tools.tensorflow_dataset(
+                data['test'],
+                batch_size=settings['batch_size'],
+                image_size=(settings['image_size'], settings['image_size']),
+                shuffle=False,
+            )
 
             # Build the model using the updated grid parameters
             model = cv_models.basic(
                 imagenet_name=settings['pretrain'],
-                augmentation=cv_models.augmentation_layer(image_size=settings['image_size']),
+                augmentation=cv_models.augmentation_layer(image_size=settings['image_size'], seed=settings['seed']),
                 input_shape=(settings['image_size'], settings['image_size'], 3),
                 shared_dropout=settings['shared_dropout'],
                 feat_dropout=settings['features_dropout'],
                 shared_layer_neurons=settings['shared_layer_neurons'],
                 pooling_type=settings['pooling_type'],
                 architecture=settings['architecture'],
+                se_block=settings['se_block'],
                 output_neurons=(
                     data['test']['family'].nunique(),
                     data['test']['genus'].nunique(),
                     data['test']['species'].nunique(),
                 )
             )
-
+            
+            # Set Loss function
+            parent_genus, parent_species = tools.make_parent_lists(
+                data['train']['family'].tolist(),
+                data['train']['genus'].tolist(),
+                data['train']['species'].tolist(),
+            )
+            
+            if settings['loss_type'] == 'cfc':
+                family_loss = tf.keras.losses.CategoricalFocalCrossentropy()
+                genus_loss = tf.keras.losses.CategoricalFocalCrossentropy()
+                species_loss = tf.keras.losses.CategoricalFocalCrossentropy()
+            elif settings['loss_type'] == 'tfcl':
+                family_loss = tools.categorical_focal_with_smoothing(
+                    gamma=2.0,
+                    alpha=0.25,
+                    smoothing=0.1,
+                    from_logits=False,   # or True if your heads output logits
+                )
+                genus_loss = tools.make_genus_loss(family_loss, parent_genus,   alpha=0.1)
+                species_loss = tools.make_species_loss(family_loss, parent_species, beta=0.1)
+            
+            model.compile(
+                optimizer=tf.keras.optimizers.Adam(learning_rate=settings['lr']),
+                loss={
+                    'family':  family_loss,      # top level: no consistency penalty
+                    'genus':   genus_loss,   # includes soft penalty
+                    'species': species_loss, # includes soft penalty
+                },
+                metrics={key: settings['metrics'] for key in ['family', 'genus', 'species']},
+                loss_weights={
+                    'family': settings['loss_weights'][0],
+                    'genus': settings['loss_weights'][1],
+                    'species': settings['loss_weights'][2],
+                },
+            )
+                    
             # Initial training phase
             model = train_with_wandb(
                 project_name=settings['project_name'],
@@ -154,8 +177,13 @@ def main():
                 config=settings,
                 model=model,
                 datasets=tf_data,
-                save=False
+                save=False,
+                parent_genus=parent_genus,
+                parent_species = parent_species,
             )
+            
+            df_params.loc[idx, 'status'] = 'done'
+            df_params.to_csv(grid_csv_path, index=False)
 
         except Exception as e:
             logger.error(f'Error in combination {idx}: {e}')
@@ -166,4 +194,16 @@ def main():
     logger.success('Grid search pipeline finished.')
 
 if __name__ == '__main__':
+    
+    # Settings
+    os.environ['TF_DETERMINISTIC_OPS'] = '1'
+    
+    # Enable mixed precision
+    tf.keras.mixed_precision.set_global_policy('mixed_float16')
+
+    # Optionally limit GPU memory growth
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    
     main()
