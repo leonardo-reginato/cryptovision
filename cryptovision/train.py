@@ -27,6 +27,38 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
 
+class TaxonomyAlignmentCallback(tf.keras.callbacks.Callback):
+    def __init__(self, val_ds, parent_genus, parent_species):
+        """
+        val_ds:          tf.data.Dataset yielding (x_batch, (y_fam, y_gen, y_spe))
+        parent_genus:    list[int]  mapping genus_idx -> family_idx
+        parent_species:  list[int]  mapping species_idx -> genus_idx
+        """
+        super().__init__()
+        self.val_ds           = val_ds
+        self.parent_genus     = np.array(parent_genus,   dtype=int)
+        self.parent_species   = np.array(parent_species, dtype=int)
+
+    def on_epoch_end(self, epoch, logs=None):
+        # 1) get predictions on the entire val set
+        fam_pred, gen_pred, spe_pred = self.model.predict(self.val_ds, verbose=0)
+
+        # 2) hard‐decisions
+        pf = np.argmax(fam_pred, axis=1)
+        pg = np.argmax(gen_pred, axis=1)
+        ps = np.argmax(spe_pred, axis=1)
+
+        # 3) check tree consistency
+        genus_ok   = (self.parent_genus[pg]   == pf)
+        species_ok = (self.parent_species[ps] == pg)
+        alignment  = np.mean(genus_ok & species_ok)
+
+        # 4) log to Keras and to wandb
+        if logs is not None:
+            logs['epoch/taxo_alignment'] = alignment
+        wandb.log({'epoch/taxo_alignment': alignment})
+        print(f" — epoch/taxo_alignment: {alignment:.4f}")
+
 def load_settings(settings_file_path: str) -> dict:
     """Load YAML settings and set version if 'auto'."""
     with open(settings_file_path, 'r') as f:
@@ -35,7 +67,6 @@ def load_settings(settings_file_path: str) -> dict:
         settings['version'] = datetime.datetime.now().strftime('%y%m.%d.%H%M')
     return settings
 
-
 def train_with_wandb(
     project_name: str,
     experiment_name: str,
@@ -43,6 +74,8 @@ def train_with_wandb(
     config: dict,
     model: tf.keras.Model,
     datasets: dict,
+    parent_genus: list[int],
+    parent_species: list[int],
     save: bool = True,
 ):
     
@@ -52,6 +85,9 @@ def train_with_wandb(
         "config": config,
         "tags": tags,
     }
+    
+    if experiment_name:
+        wandb_init_args['name'] = experiment_name
     
     # Log into wandb
     wandb.login()
@@ -91,11 +127,17 @@ def train_with_wandb(
             verbose=0
         )
         
+        taxo_cb = TaxonomyAlignmentCallback(
+            val_ds=datasets['val'],
+            parent_genus=parent_genus,
+            parent_species=parent_species
+        )
+        
         history = model.fit(
             datasets['train'],
             validation_data=datasets['val'],
             epochs=config['epochs'],
-            callbacks=[wandb_cb, early_stop, reduce_lr, checkpoint, tools.TQDMProgressBar()],
+            callbacks=[wandb_cb, early_stop, reduce_lr, checkpoint, taxo_cb, tools.TQDMProgressBar()],
             verbose=0,
         )
         
@@ -116,6 +158,16 @@ def train_with_wandb(
         for metric, value in test_results.items():
             wandb.log({f"test/{metric}": value})
             logger.info(f"test - {metric}: {value:.3f}")
+            
+        # compute test‐alignment exactly the same way
+        fam_p, gen_p, spe_p = model.predict(datasets['test'], verbose=0)
+        pf = np.argmax(fam_p, axis=1)
+        pg = np.argmax(gen_p, axis=1)
+        ps = np.argmax(spe_p, axis=1)
+        test_align = np.mean((np.array(parent_genus)[pg] == pf) &
+                            (np.array(parent_species)[ps] == pg))
+        wandb.log({'test/taxo_alignment': float(test_align)})
+        logger.info(f"test - taxo_alignment: {test_align:.4f}")
             
         logger.success("wandb training pipeline completed successfully.")
         
@@ -186,7 +238,8 @@ def main():
         input_shape=(settings['image_size'], settings['image_size'], 3),
         shared_dropout=settings['shared_dropout'],
         feat_dropout=settings['features_dropout'],
-        shared_layer_neurons=2048,
+        shared_layer_neurons=settings['shared_layer_neurons'],
+        se_block=settings['se_block'],
         pooling_type='max',
         architecture=settings['architecture'],
         output_neurons=(
@@ -196,9 +249,32 @@ def main():
         )
     )
     
+    parent_genus, parent_species = tools.make_parent_lists(
+        data['train']['family'].tolist(),
+        data['train']['genus'].tolist(),
+        data['train']['species'].tolist(),
+    )
+
+    base_focal = tools.categorical_focal_with_smoothing(
+        gamma=2.0,
+        alpha=0.25,
+        smoothing=0.1,
+        from_logits=False,   # or True if your heads output logits
+    )
+
+    genus_loss_fn = tools.make_genus_loss(base_focal, parent_genus,   alpha=0.1)
+    species_loss_fn = tools.make_species_loss(base_focal, parent_species, beta=0.1)
+    
+    #loss = tf.keras.losses.CategoricalFocalCrossentropy(label_smoothing=0.1)
+    
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=settings['lr']),
-        loss={key: settings['loss'] for key in ['family', 'genus', 'species']},
+        #loss={key: loss for key in ['family', 'genus', 'species']},
+        loss={
+            'family':  base_focal,      # top level: no consistency penalty
+            'genus':   genus_loss_fn,   # includes soft penalty
+            'species': species_loss_fn, # includes soft penalty
+        },
         metrics={key: settings['metrics'] for key in ['family', 'genus', 'species']},
         loss_weights={
             'family': settings['loss_weights'][0],
@@ -215,6 +291,8 @@ def main():
         datasets = tf_data,
         model = model,
         save = True,
+        parent_genus=parent_genus,
+        parent_species=parent_species,
     )
     
     logger.success("Training Script finished.")
