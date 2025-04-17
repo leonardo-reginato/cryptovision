@@ -599,7 +599,11 @@ class CryptoVisionAI:
         """
         Initialize the CryptoVisionAI class.
         """
-        self.model = tf.keras.models.load_model(model_path, safe_mode=safe_mode)
+        if type(model_path) is str:
+            self.model = tf.keras.models.load_model(model_path, safe_mode=safe_mode)
+        else:
+            self.model = model_path
+            
         self.family_names = family_names
         self.genus_names = genus_names
         self.species_names = species_names
@@ -1076,3 +1080,128 @@ def build_catalog(path: Path, source: str, min_size: int, num_workers: int = Non
 
     return df
 
+def make_parent_lists(family_labels, genus_labels, species_labels):
+    """
+    Given parallel arrays of string labels for each sample, returns:
+    • parent_genus: list of length G, mapping genus_idx → family_idx  
+    • parent_species: list of length S, mapping species_idx → genus_idx
+
+    Args:
+    family_labels:  list or 1D array of family names, length N_samples
+    genus_labels:   list or 1D array of genus names,  length N_samples
+    species_labels: list or 1D array of species names,length N_samples
+
+    Returns:
+    parent_genus, parent_species
+    """
+    # 1) build sorted class lists and index maps
+    families = sorted(set(family_labels))
+    genera   = sorted(set(genus_labels))
+    species  = sorted(set(species_labels))
+
+    fam2idx = {fam:i for i,fam in enumerate(families)}
+    gen2idx = {gen:i for i,gen in enumerate(genera)}
+    #spe2idx = {spe:i for i,spe in enumerate(species)}
+
+    # 2) infer true parent maps from your labelled data
+    #    use a dict comprehension over zipped pairs
+    genus2family = {
+        gen: fam
+        for gen, fam in set(zip(genus_labels, family_labels))
+    }
+    species2genus = {
+        spe: gen
+        for spe, gen in set(zip(species_labels, genus_labels))
+    }
+
+    # 3) build the lists in index‐order
+    parent_genus = [
+        fam2idx[genus2family[gen]]
+        for gen in genera
+    ]  # length = len(genera)
+
+    parent_species = [
+        gen2idx[species2genus[spe]]
+        for spe in species
+    ]  # length = len(species)
+
+    return parent_genus, parent_species
+
+# 1) Base loss: categorical focal + label smoothing
+def categorical_focal_with_smoothing(
+    gamma: float = 2.0,
+    alpha: float = 0.25,
+    smoothing: float = 0.1,
+    from_logits: bool = False,
+):
+    """
+    Returns a loss function y_true, y_pred -> scalar
+    combining label smoothing + focal weighting.
+    """
+    def loss_fn(y_true, y_pred):
+        # optional: convert logits→probs
+        if from_logits:
+            y_pred = tf.nn.softmax(y_pred, axis=-1)
+
+        # label smoothing
+        num_classes = tf.cast(tf.shape(y_true)[-1], tf.float32)
+        y_true_sm = y_true * (1.0 - smoothing) + smoothing / num_classes
+
+        # cross‑entropy per sample
+        ce = -tf.reduce_sum(y_true_sm * tf.math.log(y_pred + 1e-8), axis=-1)
+
+        # focal weight term p_t = sum(y_true_sm * y_pred)
+        p_t = tf.reduce_sum(y_true_sm * y_pred, axis=-1)
+        focal_w = alpha * tf.pow(1.0 - p_t, gamma)
+
+        return focal_w * ce
+    return loss_fn
+
+# 2) Soft consistency penalty factories
+def make_genus_loss(base_loss, parent_genus, alpha=0.1):
+    parent_genus = tf.constant(parent_genus, dtype=tf.int32)    # shape [G]
+    num_fam = tf.reduce_max(parent_genus) + 1                    # scalar
+    # mask[f, g] = 1 if genus g ∈ family f
+    children_mask = tf.transpose(
+        tf.one_hot(parent_genus, depth=num_fam, dtype=tf.float32),
+        (1, 0),
+    )  # [F, G]
+
+    def loss_fn(y_true, y_pred):
+        # base focal+smooth
+        ce = base_loss(y_true, y_pred)
+
+        # true genus idx → true family idx
+        true_g = tf.argmax(y_true, axis=-1, output_type=tf.int32)  # [batch]
+        true_f = tf.gather(parent_genus, true_g)                   # [batch]
+        # pick mask row for each example: [batch, G]
+        mask_fg = tf.gather(children_mask, true_f)
+
+        # penalty = prob mass on illegal genera
+        illegal_mass = tf.reduce_sum((1.0 - mask_fg) * y_pred, axis=-1)
+        penalty = tf.reduce_mean(illegal_mass)
+
+        return ce + alpha * penalty
+    return loss_fn
+
+def make_species_loss(base_loss, parent_species, beta=0.1):
+    parent_species = tf.constant(parent_species, dtype=tf.int32) # shape [S]
+    num_genus = tf.reduce_max(parent_species) + 1                # scalar
+    # mask[g, s] = 1 if species s ∈ genus g
+    children_mask = tf.transpose(
+        tf.one_hot(parent_species, depth=num_genus, dtype=tf.float32),
+        (1, 0),
+    )  # [G, S]
+
+    def loss_fn(y_true, y_pred):
+        ce = base_loss(y_true, y_pred)
+
+        true_s = tf.argmax(y_true, axis=-1, output_type=tf.int32)  # [batch]
+        true_g = tf.gather(parent_species, true_s)                # [batch]
+        mask_gs = tf.gather(children_mask, true_g)                # [batch, S]
+
+        illegal_mass = tf.reduce_sum((1.0 - mask_gs) * y_pred, axis=-1)
+        penalty = tf.reduce_mean(illegal_mass)
+
+        return ce + beta * penalty
+    return loss_fn
