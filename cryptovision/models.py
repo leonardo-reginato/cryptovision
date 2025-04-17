@@ -1,6 +1,3 @@
-import os
-import random
-import numpy as np
 import tensorflow as tf
 from tensorflow.keras import applications as keras_apps
 from tensorflow.keras import layers
