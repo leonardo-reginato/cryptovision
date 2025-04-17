@@ -2,47 +2,33 @@ import os
 import random
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, models as keras_models     # type: ignore
-from tensorflow.keras import applications as keras_apps         # type: ignore
-
-SEED = 42
-random.seed(SEED)
-np.random.seed(SEED)
-tf.random.set_seed(SEED)
-os.environ['TF_DETERMINISTIC_OPS'] = '1'
-
-# Mixed precision
-tf.keras.mixed_precision.set_global_policy('mixed_float16')
-
-# GPU memory growth
-gpus = tf.config.experimental.list_physical_devices('GPU')
-for gpu in gpus:
-    tf.config.experimental.set_memory_growth(gpu, True)
-
+from tensorflow.keras import applications as keras_apps
+from tensorflow.keras import layers
+from tensorflow.keras import models as keras_models
 
 class CryptoVisionModels:
-    
+
     @staticmethod
     def augmentation_layer(
-        seed:int=42, zoom_factor:tuple[int]=(0.05, 0.1), 
-        contrast:float=0.2, brightness:float=0.2, rotation:float=0.1, 
-        translation:float=0.1, image_size:int=224, gauss_noise:float=0.2,
+        seed: int = 42, zoom_factor: tuple[int] = (0.05, 0.1),
+        contrast: float = 0.2, brightness: float = 0.2, rotation: float = 0.1,
+        translation: float = 0.1, image_size: int = 224, gauss_noise: float = 0.2,
     ):
         aug_layer = tf.keras.Sequential(
             [
-            layers.RandomFlip("horizontal", seed=seed),
+                layers.RandomFlip("horizontal", seed=seed),
                 layers.RandomRotation(rotation, seed=seed),
                 layers.RandomZoom(height_factor=zoom_factor, width_factor=zoom_factor, seed=seed),  # Wider zoom range
                 layers.RandomContrast(contrast, seed=seed),
                 layers.RandomBrightness(brightness, seed=seed),
                 layers.RandomTranslation(translation, translation, seed=seed),
                 layers.RandomCrop(image_size, image_size, seed=seed),
-                layers.GaussianNoise(gauss_noise, seed=seed), 
+                layers.GaussianNoise(gauss_noise, seed=seed),
             ]
         )
-        
+
         return aug_layer
-        
+
     @staticmethod
     def backbone_and_preprocess(pretrain: str, image_shape=(224, 224, 3)):
         model_map = {
@@ -133,8 +119,8 @@ class CryptoVisionModels:
         gate = layers.Dense(shared_dim, activation='sigmoid', name=f"{name_prefix}_gate")(conditioning_logits)
 
         # Learn complementary gate for shared features
-        #gate_inv = layers.Lambda(lambda x: 1.0 - x, name=f"{name_prefix}_gate_inv")(gate)
-        #gate_inv = layers.Subtract(name=f"{name_prefix}_gate_inv")([tf.ones_like(gate), gate])
+        # gate_inv = layers.Lambda(lambda x: 1.0 - x, name=f"{name_prefix}_gate_inv")(gate)
+        # gate_inv = layers.Subtract(name=f"{name_prefix}_gate_inv")([tf.ones_like(gate), gate])
         gate_inv = 1.0 - gate
 
         # Apply gate to both paths
@@ -147,42 +133,53 @@ class CryptoVisionModels:
         return fused
 
     @staticmethod
-    def basic(imagenet_name:str, output_neurons:tuple, input_shape:tuple[int]=(224, 224, 224), shared_dropout:float=0.3, feat_dropout:float=0.3, pooling_type:str='max', architecture:bool=False, name:str=None, augmentation=None, trainable:bool=False, shared_layer_neurons=None):
-        
+    def basic(imagenet_name: str, output_neurons: tuple, input_shape: tuple[int] = (224, 224, 224), shared_dropout: float = 0.3, feat_dropout: float = 0.3, pooling_type: str = 'max', architecture: str = 'std', name: str = None, augmentation=None, trainable: bool = False, shared_layer_neurons=None, se_block:bool=False):
+
         # Load pretrained backbone and preprocessing function
         imagenet_model, preprocess = CryptoVisionModels.backbone_and_preprocess(imagenet_name, input_shape)
         imagenet_model.trainable = trainable
-        
+
         # Create backbone feature extractor model
         feature_extractor = CryptoVisionModels.build_feature_extractor(
             imagenet_model, preprocess, input_shape, name='pretrain', augmentation=augmentation
         )
         
+        # backbone → feature map
+        feat_map = feature_extractor.output
+
+        # SE Block
+        if se_block:
+            feat_map = CryptoVisionModels.se_block(
+                feat_map,
+                reduction_ratio=16,
+                name_prefix='se_backbone'
+            )
+
         # Global pooling from feature extractor output
         if pooling_type == 'max':
-            features = layers.GlobalMaxPool2D(name='GlobMaxPool2D')(feature_extractor.output)
+            features = layers.GlobalMaxPool2D(name='GlobMaxPool2D')(feat_map)
         elif pooling_type == 'avg':
-            features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(feature_extractor.output)
+            features = layers.GlobalAveragePooling2D(name='GlobAvgPool2D')(feat_map)
         else:
             raise ValueError(f"Invalid pooling type: {pooling_type}. Choose 'max' or 'avg'.")
-        
+
         # Features dropout
         if feat_dropout and feat_dropout > 0:
             features = layers.BatchNormalization(name='features_BatchNorm')(features)
             features = layers.Dropout(feat_dropout, name=f'features_DropOut_{feat_dropout}')(features)
-        
+
         # Shared layers
         shared_layer = CryptoVisionModels.dense_block(
             features, 'shared_layer', shared_layer_neurons or features.shape[-1], shared_dropout
         )
-        
+
         # Family
         family_output = layers.Dense(output_neurons[0], activation='softmax', name='family')(shared_layer)
-        
+
         #  Genus
         if architecture == 'concat':
             genus_input = layers.Concatenate(name='genus_input')([shared_layer, family_output])
-            
+
         elif architecture == 'att':
             genus_input = CryptoVisionModels.taxonomy_conditioned_attention(
                 shared_layer, family_output, name_prefix='genus_attn'
@@ -194,7 +191,7 @@ class CryptoVisionModels:
         else:
             genus_input = shared_layer
         genus_output = layers.Dense(output_neurons[1], activation='softmax', name='genus')(genus_input)
-        
+
         # Species
         if architecture == 'concat':
             species_input = layers.Concatenate(name='species_input')([shared_layer, genus_output])
@@ -203,16 +200,67 @@ class CryptoVisionModels:
                 shared_layer, genus_output, name_prefix='species_attn'
             )
         elif architecture == 'gated':
-                species_input = CryptoVisionModels.gated_hierarchical_fusion(
-                    shared_layer, genus_output, name_prefix='species_gated'
-                )
+            species_input = CryptoVisionModels.gated_hierarchical_fusion(
+                shared_layer, genus_output, name_prefix='species_gated'
+            )
         else:
             species_input = shared_layer
         species_output = layers.Dense(output_neurons[2], activation='softmax', name='species')(species_input)
-        
+
         return keras_models.Model(
-            feature_extractor.input, 
-            [family_output, genus_output, species_output], 
+            feature_extractor.input,
+            [family_output, genus_output, species_output],
             name=name or 'CVisionBasic'
         )
 
+    @staticmethod
+    def se_block(input_tensor, reduction_ratio=16, name_prefix="se"):
+        """
+        Squeeze-and-Excitation block.
+        Args:
+          input_tensor: 4D tensor (batch, H, W, C)
+          reduction_ratio: how much to shrink channels in the bottleneck
+        Returns:
+          re‑weighted tensor of same shape as input_tensor
+        """
+        channel_axis = -1
+        channels = input_tensor.shape[channel_axis]
+
+        # 1) Squeeze
+        se = layers.GlobalAveragePooling2D(name=f"{name_prefix}_squeeze")(input_tensor)
+        # make it (batch, 1, 1, C)
+        se = layers.Reshape((1, 1, channels), name=f"{name_prefix}_reshape")(se)
+
+        # 2) Excite (bottleneck MLP)
+        se = layers.Dense(
+            units=channels // reduction_ratio,
+            activation='relu',
+            name=f"{name_prefix}_reduce"
+        )(se)
+        se = layers.Dense(
+            units=channels,
+            activation='sigmoid',
+            name=f"{name_prefix}_expand"
+        )(se)
+
+        # 3) Scale
+        x = layers.Multiply(name=f"{name_prefix}_scale")([input_tensor, se])
+        return x
+    
+    
+if __name__ == "__main__":
+
+    model = CryptoVisionModels.basic(
+        imagenet_name='rn50v2',
+        input_shape=(352, 352, 3),
+        output_neurons=(21, 62, 113),
+        augmentation=CryptoVisionModels.augmentation_layer(image_size=352),
+        pooling_type='max',
+        shared_dropout=0.3,
+        feat_dropout=0.3,
+        se_block=True,
+        architecture='att'
+        
+    )
+
+    print(model.summary(show_trainable=True))
