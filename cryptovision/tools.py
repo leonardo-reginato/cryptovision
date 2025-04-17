@@ -437,7 +437,7 @@ def plot_training_history(history, history_fine, fine_tune_at):
     for key in accuracy_keys + val_accuracy_keys + loss_keys + val_loss_keys:
         combined_history[key] = history.history.get(key, []) + history_fine.history.get(key, [])
 
-    total_epochs = len(combined_history[accuracy_keys[0]])  # Total number of epochs including fine-tuning
+    #total_epochs = len(combined_history[accuracy_keys[0]])  # Total number of epochs including fine-tuning
     
     # Create subplots for accuracy and loss
     fig, axs = plt.subplots(2, 3, figsize=(18, 10))
