@@ -65,6 +65,7 @@ def main():
             settings['architecture'] = row['architecture']
             settings['loss_type'] = row['loss_type']
             settings['seed'] = row['seed']
+            settings['version'] = datetime.datetime.now().strftime('%y%m.%d.%H%M')
             
             SEED = settings['seed']
             random.seed(SEED)
@@ -144,6 +145,8 @@ def main():
                 family_loss = tf.keras.losses.CategoricalFocalCrossentropy()
                 genus_loss = tf.keras.losses.CategoricalFocalCrossentropy()
                 species_loss = tf.keras.losses.CategoricalFocalCrossentropy()
+                logger.warning("Loss Function selected -> CFC")
+                
             elif settings['loss_type'] == 'tfcl':
                 family_loss = tools.categorical_focal_with_smoothing(
                     gamma=2.0,
@@ -153,6 +156,7 @@ def main():
                 )
                 genus_loss = tools.make_genus_loss(family_loss, parent_genus,   alpha=0.1)
                 species_loss = tools.make_species_loss(family_loss, parent_species, beta=0.1)
+                logger.warning("Loss Function selected -> TFCL")
             
             model.compile(
                 optimizer=tf.keras.optimizers.Adam(learning_rate=settings['lr']),
@@ -177,7 +181,7 @@ def main():
                 config=settings,
                 model=model,
                 datasets=tf_data,
-                save=False,
+                save=True,
                 parent_genus=parent_genus,
                 parent_species = parent_species,
             )
