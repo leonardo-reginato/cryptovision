@@ -1,66 +1,67 @@
-import os
 import math
-from pathlib import Path
+import os
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import cv2
 import imagehash
-import requests
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import requests
 import tensorflow as tf
-import matplotlib.pyplot as plt
-
-from PIL import Image, ImageStat, ExifTags
-from tqdm import tqdm
+from colorama import Fore, Style
+from lime.lime_image import LimeImageExplainer
+from loguru import logger
+from PIL import ExifTags, Image, ImageStat
+from skimage.segmentation import mark_boundaries
 from sklearn.model_selection import train_test_split
+from tensorflow.keras.callbacks import Callback  # type: ignore
+from tf_keras_vis.saliency import Saliency
 from tf_keras_vis.utils.model_modifiers import ReplaceToLinear
 from tf_keras_vis.utils.scores import CategoricalScore
-from tf_keras_vis.saliency import Saliency
-from skimage.segmentation import mark_boundaries
-from lime.lime_image import LimeImageExplainer
-from tensorflow.keras.callbacks import Callback     # type: ignore
-
-from loguru import logger
-from colorama import Fore, Style
+from tqdm import tqdm
 
 
 class TQDMProgressBar(Callback):
-    
     def __init__(self):
         super(TQDMProgressBar, self).__init__()
         self.epoch_bar = None  # Ensure clean initialization
-    
+
     def on_train_begin(self, logs=None):
         # Close any lingering progress bars from previous runs
         if self.epoch_bar:
             self.epoch_bar.close()
         self.epoch_bar = None
-    
+
     def on_epoch_begin(self, epoch, logs=None):
         # Close any existing progress bar to avoid overlaps
         if self.epoch_bar:
             self.epoch_bar.close()
-            
+
         # Create a new progress bar for each epoch
-        self.epoch_bar = tqdm(total=self.params['steps'], 
-                              desc=f"Epoch {epoch+1}/{self.params['epochs']}", 
-                              unit="batch", 
-                              dynamic_ncols=True)
-    
+        self.epoch_bar = tqdm(
+            total=self.params["steps"],
+            desc=f"Epoch {epoch + 1}/{self.params['epochs']}",
+            unit="batch",
+            dynamic_ncols=True,
+        )
+
     def on_batch_end(self, batch, logs=None):
         if self.epoch_bar:
             self.epoch_bar.update(1)
-        
+
         # Reduce updates to avoid clutter
-        if batch % 1 == 0 or batch == self.params['steps'] - 1:
-            self.epoch_bar.set_postfix({
-                'loss': f"{logs.get('loss', 0):.4f}",
-                'fam_acc': f"{logs.get('family_accuracy', 0):.4f}",
-                'gen_acc': f"{logs.get('genus_accuracy', 0):.4f}",
-                'spe_acc': f"{logs.get('species_accuracy', 0):.4f}",
-            })
-    
+        if batch % 1 == 0 or batch == self.params["steps"] - 1:
+            self.epoch_bar.set_postfix(
+                {
+                    "loss": f"{logs.get('loss', 0):.4f}",
+                    "fam_acc": f"{logs.get('family_accuracy', 0):.4f}",
+                    "gen_acc": f"{logs.get('genus_accuracy', 0):.4f}",
+                    "spe_acc": f"{logs.get('species_accuracy', 0):.4f}",
+                }
+            )
+
     def colorize_accuracy(self, value):
         if value < 0.75:
             return Fore.RED + f"{value:.4f}" + Style.RESET_ALL
@@ -70,73 +71,81 @@ class TQDMProgressBar(Callback):
             return Fore.GREEN + f"{value:.4f}" + Style.RESET_ALL
         else:
             return Fore.MAGENTA + f"{value:.4f}" + Style.RESET_ALL
-    
+
     def on_epoch_end(self, epoch, logs=None):
         if self.epoch_bar:
             self.epoch_bar.close()
             self.epoch_bar = None  # Reset for the next epoch
-        
-        val_family_acc = logs.get('val_family_accuracy', 0)
-        val_genus_acc = logs.get('val_genus_accuracy', 0)
-        val_species_acc = logs.get('val_species_accuracy', 0)
+
+        val_family_acc = logs.get("val_family_accuracy", 0)
+        val_genus_acc = logs.get("val_genus_accuracy", 0)
+        val_species_acc = logs.get("val_species_accuracy", 0)
 
         val_family_acc_colored = self.colorize_accuracy(val_family_acc)
         val_genus_acc_colored = self.colorize_accuracy(val_genus_acc)
         val_species_acc_colored = self.colorize_accuracy(val_species_acc)
 
         summary_message = (
-            f"Epoch {epoch+1} - Val Loss: {logs.get('val_loss', 0):.4f}, "
+            f"Epoch {epoch + 1} - Val Loss: {logs.get('val_loss', 0):.4f}, "
             f"Val Family Acc: {val_family_acc_colored}, "
             f"Val Genus Acc: {val_genus_acc_colored}, "
             f"Val Species Acc: {val_species_acc_colored}"
         )
         logger.info(summary_message)
-    
+
     def on_train_end(self, logs=None):
         if self.epoch_bar:
             self.epoch_bar.close()
             self.epoch_bar = None
 
 
-def image_dir_pandas(path: Path, source: str=None):
+def image_dir_pandas(path: Path, source: str = None):
     """
     Loads image paths and their taxonomic labels into a Pandas DataFrame.
-    
+
     Parameters:
     - image_dir (str): Root directory containing image subfolders.
     - source (str, optional): Source identifier to include in the DataFrame.
-    
+
     Returns:
     - pd.DataFrame: DataFrame containing image paths and taxonomic labels.
     """
     paths, labels = [], []
-    
+
     for root, _, files in os.walk(path):
         folder_label = os.path.basename(root)
         if folder_label == "GT" or folder_label.startswith("."):
             continue
-        
+
         for file in files:
-            if file.lower().endswith(('.jpeg', '.png', '.jpg')) and not file.startswith('.'):
+            if file.lower().endswith((".jpeg", ".png", ".jpg")) and not file.startswith(
+                "."
+            ):
                 paths.append(os.path.join(root, file))
                 labels.append(folder_label)
-    
-    df = pd.DataFrame({'image_path': paths, 'folder_label': labels})
-    df['folder_label'] = df['folder_label'].astype("category")
-    
+
+    df = pd.DataFrame({"image_path": paths, "folder_label": labels})
+    df["folder_label"] = df["folder_label"].astype("category")
+
     try:
-        df[['family', 'genus', 'species']] = df['folder_label'].str.split("_", expand=True)
-        df['species'] = df['genus'] + " " + df['species']
+        df[["family", "genus", "species"]] = df["folder_label"].str.split(
+            "_", expand=True
+        )
+        df["species"] = df["genus"] + " " + df["species"]
     except ValueError:
-        raise ValueError("Ensure the folder structure follows 'family_genus_species' format.")
-    
+        raise ValueError(
+            "Ensure the folder structure follows 'family_genus_species' format."
+        )
+
     if source:
-        df['source'] = source
-    
+        df["source"] = source
+
     return df
 
 
-def split_dataframe(df, test_size=0.2, val_size=0.1, random_state=42, stratify_by='folder_label'):
+def split_dataframe(
+    df, test_size=0.2, val_size=0.1, random_state=42, stratify_by="folder_label"
+):
     """
     Split a pandas DataFrame into train, validation, and test sets,
     stratified by the 'folder_name' column.
@@ -150,41 +159,37 @@ def split_dataframe(df, test_size=0.2, val_size=0.1, random_state=42, stratify_b
     Returns:
         tuple: Three pandas DataFrames for train, validation, and test sets.
     """
-    
+
     # First, split into train+validation and test sets
     train_val_df, test_df = train_test_split(
-        df,
-        test_size=test_size,
-        stratify=df[stratify_by],
-        random_state=random_state
+        df, test_size=test_size, stratify=df[stratify_by], random_state=random_state
     )
-    
+
     # Calculate the adjusted validation size relative to the remaining train+val data
     val_relative_size = val_size / (1 - test_size)
-    
+
     # Split the train+validation set into train and validation sets
     train_df, val_df = train_test_split(
         train_val_df,
         test_size=val_relative_size,
         stratify=train_val_df[stratify_by],
-        random_state=random_state
+        random_state=random_state,
     )
-    
+
     train_df.reset_index(drop=True, inplace=True)
     val_df.reset_index(drop=True, inplace=True)
     test_df.reset_index(drop=True, inplace=True)
-    
+
     return train_df, val_df, test_df
 
 
 def load_image(image_path, image_size: tuple[int, int] = None):
-    
     img = tf.io.read_file(image_path)
     img = tf.image.decode_jpeg(img, channels=3)
-    
+
     if image_size:
         img = tf.image.resize(img, image_size)
-    
+
     return img
 
 
@@ -208,17 +213,23 @@ def standard_directory(input_path, prefix, quality=95):
         if not subfolder.is_dir():
             continue
 
-        parts = subfolder.name.split('_')
+        parts = subfolder.name.split("_")
         if len(parts) != 3:
-            print(f"Skipping folder '{subfolder.name}': not in 'Family_Genus_species' format.")
+            print(
+                f"Skipping folder '{subfolder.name}': not in 'Family_Genus_species' format."
+            )
             continue
 
         _, genus, species = parts
 
         # Get and sort all image files with supported extensions
-        supported_exts = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff'}
+        supported_exts = {".jpg", ".jpeg", ".png", ".bmp", ".tiff"}
         image_files = sorted(
-            [img for img in subfolder.iterdir() if img.is_file() and img.suffix.lower() in supported_exts]
+            [
+                img
+                for img in subfolder.iterdir()
+                if img.is_file() and img.suffix.lower() in supported_exts
+            ]
         )
 
         for idx, image_file in enumerate(image_files, start=1):
@@ -245,7 +256,16 @@ def standard_directory(input_path, prefix, quality=95):
     return True
 
 
-def process_image_and_labels(image_path, family, genus, species, family_labels, genus_labels, species_labels, image_size=(224,224)):
+def process_image_and_labels(
+    image_path,
+    family,
+    genus,
+    species,
+    family_labels,
+    genus_labels,
+    species_labels,
+    image_size=(224, 224),
+):
     """
     Process an image and its corresponding labels for training.
 
@@ -287,14 +307,15 @@ def process_image_and_labels(image_path, family, genus, species, family_labels, 
     species_label = tf.one_hot(species_label, len(species_labels))
 
     # Return the image and a dictionary of labels with matching keys
-    return img, {
-        "family": family_label,
-        "genus": genus_label,
-        "species": species_label
-    }
+    return img, {"family": family_label, "genus": genus_label, "species": species_label}
 
 
-def tensorflow_dataset(df, batch_size: int=32, image_size: tuple[int, int]=(224, 224), shuffle: bool=True) -> tf.data.Dataset:
+def tensorflow_dataset(
+    df,
+    batch_size: int = 32,
+    image_size: tuple[int, int] = (224, 224),
+    shuffle: bool = True,
+) -> tf.data.Dataset:
     """
     Build a TensorFlow dataset from a DataFrame containing image paths and taxonomic labels.
 
@@ -320,11 +341,11 @@ def tensorflow_dataset(df, batch_size: int=32, image_size: tuple[int, int]=(224,
     species_labels : list
         A sorted list of unique species labels.
     """
-    
+
     # Extract the unique family, genus, and species from the dataframe
-    family_labels = sorted(df['family'].unique())
-    genus_labels = sorted(df['genus'].unique())
-    species_labels = sorted(df['species'].unique())
+    family_labels = sorted(df["family"].unique())
+    genus_labels = sorted(df["genus"].unique())
+    species_labels = sorted(df["species"].unique())
 
     # Convert family, genus, and species labels to TensorFlow tensors
     family_labels = tf.constant(family_labels)
@@ -333,30 +354,49 @@ def tensorflow_dataset(df, batch_size: int=32, image_size: tuple[int, int]=(224,
 
     # Create a TensorFlow dataset from the dataframe's paths and labels
     path_ds = tf.data.Dataset.from_tensor_slices(
-        (df['image_path'].values, df['family'].values, df['genus'].values, df['species'].values)
+        (
+            df["image_path"].values,
+            df["family"].values,
+            df["genus"].values,
+            df["species"].values,
+        )
     )
 
     # Map the processing function to the dataset
     image_dataset = path_ds.map(
         lambda path, family, genus, species: process_image_and_labels(
-            path, family, genus, species, family_labels, genus_labels, species_labels, image_size=image_size
+            path,
+            family,
+            genus,
+            species,
+            family_labels,
+            genus_labels,
+            species_labels,
+            image_size=image_size,
         ),
         num_parallel_calls=tf.data.AUTOTUNE,
     )
 
     # Shuffle, batch, and prefetch the dataset
-    image_dataset = image_dataset\
-        .batch(batch_size)\
-        .cache()\
-        .prefetch(buffer_size=tf.data.AUTOTUNE)
-        
+    image_dataset = (
+        image_dataset.batch(batch_size).cache().prefetch(buffer_size=tf.data.AUTOTUNE)
+    )
+
     if shuffle:
         image_dataset = image_dataset.shuffle(buffer_size=len(df))
 
     return image_dataset
 
 
-def predict_image(image_path, model, family_labels, genus_labels, species_labels, image_size=(224,224) ,top_k=3):
+def predict_image(
+    image_path,
+    model,
+    family_labels,
+    genus_labels,
+    species_labels,
+    image_size=(224, 224),
+    top_k=3,
+):
     """
     Predict the top-k family, genus, and species from an image using a trained model,
     and display the image with predictions.
@@ -381,7 +421,7 @@ def predict_image(image_path, model, family_labels, genus_labels, species_labels
 
     # Predict family, genus, and species
     family_pred, genus_preds, species_preds = model.predict(img)
-    
+
     # Get top-k predictions for family
     top_k_family_indices = np.argsort(family_pred[0])[-top_k:][::-1]
     top_k_family = [(family_labels[i], family_pred[0][i]) for i in top_k_family_indices]
@@ -392,12 +432,14 @@ def predict_image(image_path, model, family_labels, genus_labels, species_labels
 
     # Get top-k predictions for species
     top_k_species_indices = np.argsort(species_preds[0])[-top_k:][::-1]
-    top_k_species = [(species_labels[i], species_preds[0][i]) for i in top_k_species_indices]
+    top_k_species = [
+        (species_labels[i], species_preds[0][i]) for i in top_k_species_indices
+    ]
 
     # Display the image
     plt.figure(figsize=(6, 6))
     plt.imshow(tf.image.resize(img[0], image_size) / 255.0)
-    plt.axis('off')
+    plt.axis("off")
     plt.title("Input Image")
     plt.show()
 
@@ -420,54 +462,66 @@ def predict_image(image_path, model, family_labels, genus_labels, species_labels
 def plot_training_history(history, history_fine, fine_tune_at):
     """
     Plot the training history of accuracy and loss for each output.
-    
+
     Args:
     - history (History): History object from the initial training.
     - history_fine (History): History object from the fine-tuning phase.
     - fine_tune_at (int): Epoch at which fine-tuning began.
     """
     # Combine initial training history and fine-tuning history
-    accuracy_keys = ['family_accuracy', 'genus_accuracy', 'species_accuracy']
-    val_accuracy_keys = ['val_family_accuracy', 'val_genus_accuracy', 'val_species_accuracy']
-    loss_keys = ['family_loss', 'genus_loss', 'species_loss']
-    val_loss_keys = ['val_family_loss', 'val_genus_loss', 'val_species_loss']
+    accuracy_keys = ["family_accuracy", "genus_accuracy", "species_accuracy"]
+    val_accuracy_keys = [
+        "val_family_accuracy",
+        "val_genus_accuracy",
+        "val_species_accuracy",
+    ]
+    loss_keys = ["family_loss", "genus_loss", "species_loss"]
+    val_loss_keys = ["val_family_loss", "val_genus_loss", "val_species_loss"]
 
     # Combine the data from the initial training and fine-tuning phases
     combined_history = {}
     for key in accuracy_keys + val_accuracy_keys + loss_keys + val_loss_keys:
-        combined_history[key] = history.history.get(key, []) + history_fine.history.get(key, [])
+        combined_history[key] = history.history.get(key, []) + history_fine.history.get(
+            key, []
+        )
 
-    #total_epochs = len(combined_history[accuracy_keys[0]])  # Total number of epochs including fine-tuning
-    
+    # total_epochs = len(combined_history[accuracy_keys[0]])  # Total number of epochs including fine-tuning
+
     # Create subplots for accuracy and loss
     fig, axs = plt.subplots(2, 3, figsize=(18, 10))
-    
+
     # Plot accuracy for each output
     for idx, key in enumerate(accuracy_keys):
-        axs[0, idx].plot(combined_history[key], label='Training Accuracy')
-        axs[0, idx].plot(combined_history[val_accuracy_keys[idx]], label='Validation Accuracy')
-        axs[0, idx].axvline(x=fine_tune_at, color='r', linestyle='--', label='Fine-Tuning Start')
-        axs[0, idx].set_title(f'{key.replace("_accuracy", "").capitalize()} Accuracy')
-        axs[0, idx].set_xlabel('Epochs')
-        axs[0, idx].set_ylabel('Accuracy')
+        axs[0, idx].plot(combined_history[key], label="Training Accuracy")
+        axs[0, idx].plot(
+            combined_history[val_accuracy_keys[idx]], label="Validation Accuracy"
+        )
+        axs[0, idx].axvline(
+            x=fine_tune_at, color="r", linestyle="--", label="Fine-Tuning Start"
+        )
+        axs[0, idx].set_title(f"{key.replace('_accuracy', '').capitalize()} Accuracy")
+        axs[0, idx].set_xlabel("Epochs")
+        axs[0, idx].set_ylabel("Accuracy")
         axs[0, idx].legend()
         axs[0, idx].grid(True)
-    
+
     # Plot loss for each output
     for idx, key in enumerate(loss_keys):
-        axs[1, idx].plot(combined_history[key], label='Training Loss')
-        axs[1, idx].plot(combined_history[val_loss_keys[idx]], label='Validation Loss')
-        axs[1, idx].axvline(x=fine_tune_at, color='r', linestyle='--', label='Fine-Tuning Start')
-        axs[1, idx].set_title(f'{key.replace("_loss", "").capitalize()} Loss')
-        axs[1, idx].set_xlabel('Epochs')
-        axs[1, idx].set_ylabel('Loss')
+        axs[1, idx].plot(combined_history[key], label="Training Loss")
+        axs[1, idx].plot(combined_history[val_loss_keys[idx]], label="Validation Loss")
+        axs[1, idx].axvline(
+            x=fine_tune_at, color="r", linestyle="--", label="Fine-Tuning Start"
+        )
+        axs[1, idx].set_title(f"{key.replace('_loss', '').capitalize()} Loss")
+        axs[1, idx].set_xlabel("Epochs")
+        axs[1, idx].set_ylabel("Loss")
         axs[1, idx].legend()
         axs[1, idx].grid(True)
-    
+
     # Adjust layout
     plt.tight_layout()
     plt.show()
-    
+
 
 def get_taxonomic_mappings_from_folders(data_dir):
     """
@@ -490,7 +544,7 @@ def get_taxonomic_mappings_from_folders(data_dir):
     species_to_genus = {}
 
     for folder_name in os.listdir(data_dir):
-        parts = folder_name.split('_')
+        parts = folder_name.split("_")
         if len(parts) == 3:
             family, genus, species = parts
             family_labels.add(family)
@@ -500,7 +554,14 @@ def get_taxonomic_mappings_from_folders(data_dir):
             genus_to_family[genus] = family
             species_to_genus[species_full] = genus
 
-    return sorted(list(family_labels)), sorted(list(genus_labels)), sorted(list(species_labels)), genus_to_family, species_to_genus
+    return (
+        sorted(list(family_labels)),
+        sorted(list(genus_labels)),
+        sorted(list(species_labels)),
+        genus_to_family,
+        species_to_genus,
+    )
+
 
 def get_taxonomic_mappings_from_dataframe(df):
     """
@@ -518,29 +579,39 @@ def get_taxonomic_mappings_from_dataframe(df):
     """
 
     # Deduplicate based on folder_label (one per class is enough for structure)
-    df_unique = df[['species', 'genus', 'family']].drop_duplicates()
+    df_unique = df[["species", "genus", "family"]].drop_duplicates()
 
     # Sorted label vocabularies
-    family_labels = sorted(df_unique['family'].unique())
-    genus_labels = sorted(df_unique['genus'].unique())
-    species_labels = sorted(df_unique['species'].unique())  # already "Genus species" string
+    family_labels = sorted(df_unique["family"].unique())
+    genus_labels = sorted(df_unique["genus"].unique())
+    species_labels = sorted(
+        df_unique["species"].unique()
+    )  # already "Genus species" string
 
     # Map from genus index → family index
     genus_to_family_map = {
-        genus_labels.index(row['genus']): family_labels.index(row['family'])
-        for _, row in df_unique[['genus', 'family']].drop_duplicates().iterrows()
+        genus_labels.index(row["genus"]): family_labels.index(row["family"])
+        for _, row in df_unique[["genus", "family"]].drop_duplicates().iterrows()
     }
 
     # Map from species index → genus index
     species_to_genus_map = {
-        species_labels.index(row['species']): genus_labels.index(row['genus'])
-        for _, row in df_unique[['species', 'genus']].drop_duplicates().iterrows()
+        species_labels.index(row["species"]): genus_labels.index(row["genus"])
+        for _, row in df_unique[["species", "genus"]].drop_duplicates().iterrows()
     }
 
-    return family_labels, genus_labels, species_labels, genus_to_family_map, species_to_genus_map
+    return (
+        family_labels,
+        genus_labels,
+        species_labels,
+        genus_to_family_map,
+        species_to_genus_map,
+    )
+
 
 def analyze_taxonomic_misclassifications(
-    model, dataset, genus_labels, species_labels, genus_to_family, species_to_genus):
+    model, dataset, genus_labels, species_labels, genus_to_family, species_to_genus
+):
     """
     Analyze genus and species misclassifications, tracking if genus respects family,
     and if species respects genus and family levels.
@@ -561,8 +632,8 @@ def analyze_taxonomic_misclassifications(
     for images, labels in dataset:
         _, genus_logits, species_logits = model(images, training=False)
 
-        true_genus_indices = tf.argmax(labels['genus'], axis=1).numpy()
-        true_species_indices = tf.argmax(labels['species'], axis=1).numpy()
+        true_genus_indices = tf.argmax(labels["genus"], axis=1).numpy()
+        true_species_indices = tf.argmax(labels["species"], axis=1).numpy()
         pred_genus_indices = np.argmax(genus_logits, axis=1)
         pred_species_indices = np.argmax(species_logits, axis=1)
 
@@ -570,7 +641,9 @@ def analyze_taxonomic_misclassifications(
         for true_idx, pred_idx in zip(true_genus_indices, pred_genus_indices):
             if true_idx != pred_idx:
                 genus_mistakes += 1
-                if genus_to_family[genus_labels[true_idx]] == genus_to_family.get(genus_labels[pred_idx], None):
+                if genus_to_family[genus_labels[true_idx]] == genus_to_family.get(
+                    genus_labels[pred_idx], None
+                ):
                     genus_respect_family += 1
 
         # Species misclassification respecting genus and family
@@ -586,16 +659,24 @@ def analyze_taxonomic_misclassifications(
                     species_respect_family += 1
 
     results = {
-        "genus_respect_family": (genus_respect_family / genus_mistakes * 100) if genus_mistakes > 0 else 0,
-        "species_respect_genus": (species_respect_genus / species_mistakes * 100) if species_mistakes > 0 else 0,
-        "species_respect_family": (species_respect_family / species_mistakes * 100) if species_mistakes > 0 else 0
+        "genus_respect_family": (genus_respect_family / genus_mistakes * 100)
+        if genus_mistakes > 0
+        else 0,
+        "species_respect_genus": (species_respect_genus / species_mistakes * 100)
+        if species_mistakes > 0
+        else 0,
+        "species_respect_family": (species_respect_family / species_mistakes * 100)
+        if species_mistakes > 0
+        else 0,
     }
 
     return results
 
 
 class CryptoVisionAI:
-    def __init__(self, model_path, family_names, genus_names, species_names, safe_mode=True):
+    def __init__(
+        self, model_path, family_names, genus_names, species_names, safe_mode=True
+    ):
         """
         Initialize the CryptoVisionAI class.
         """
@@ -603,7 +684,7 @@ class CryptoVisionAI:
             self.model = tf.keras.models.load_model(model_path, safe_mode=safe_mode)
         else:
             self.model = model_path
-            
+
         self.family_names = family_names
         self.genus_names = genus_names
         self.species_names = species_names
@@ -613,15 +694,21 @@ class CryptoVisionAI:
 
     @property
     def family_model(self):
-        return tf.keras.Model(inputs=self.model.input, outputs=self.model.get_layer('family').output)
+        return tf.keras.Model(
+            inputs=self.model.input, outputs=self.model.get_layer("family").output
+        )
 
     @property
     def genus_model(self):
-        return tf.keras.Model(inputs=self.model.input, outputs=self.model.get_layer('genus').output)
+        return tf.keras.Model(
+            inputs=self.model.input, outputs=self.model.get_layer("genus").output
+        )
 
     @property
     def species_model(self):
-        return tf.keras.Model(inputs=self.model.input, outputs=self.model.get_layer('species').output)
+        return tf.keras.Model(
+            inputs=self.model.input, outputs=self.model.get_layer("species").output
+        )
 
     @property
     def image(self):
@@ -634,13 +721,17 @@ class CryptoVisionAI:
     @property
     def confidence(self):
         try:
-            family_pred = self.preds[0].max() if self.preds[0] is not None else "Unknown"
+            family_pred = (
+                self.preds[0].max() if self.preds[0] is not None else "Unknown"
+            )
             genus_pred = self.preds[1].max() if self.preds[1] is not None else "Unknown"
-            species_pred = self.preds[2].max() if self.preds[2] is not None else "Unknown"
+            species_pred = (
+                self.preds[2].max() if self.preds[2] is not None else "Unknown"
+            )
             return (family_pred, genus_pred, species_pred)
         except IndexError:
             return ("Unknown", "Unknown", "Unknown")
-    
+
     def load_image(self, image_path):
         """
         Load and preprocess an image for prediction.
@@ -652,9 +743,21 @@ class CryptoVisionAI:
 
     def decoder(self, preds):
         try:
-            family_pred = self.family_names[np.argmax(preds[0])] if preds[0] is not None else "Unknown"
-            genus_pred = self.genus_names[np.argmax(preds[1])] if preds[1] is not None else "Unknown"
-            species_pred = self.species_names[np.argmax(preds[2])] if preds[2] is not None else "Unknown"
+            family_pred = (
+                self.family_names[np.argmax(preds[0])]
+                if preds[0] is not None
+                else "Unknown"
+            )
+            genus_pred = (
+                self.genus_names[np.argmax(preds[1])]
+                if preds[1] is not None
+                else "Unknown"
+            )
+            species_pred = (
+                self.species_names[np.argmax(preds[2])]
+                if preds[2] is not None
+                else "Unknown"
+            )
             return (family_pred, genus_pred, species_pred)
         except IndexError:
             return ("Unknown", "Unknown", "Unknown")
@@ -662,7 +765,7 @@ class CryptoVisionAI:
     def predict(self, input_data, return_raw=False, top_k=1):
         """
         Predict family, genus, and species for a given input.
-        
+
         Args:
             input_data (str, np.array, tf.data.Dataset, or pd.DataFrame): Input image path, numpy array, TensorFlow dataset, or pandas dataframe.
             return_raw (bool): If True, return raw predictions.
@@ -670,14 +773,16 @@ class CryptoVisionAI:
         Returns:
             dict or list: Decoded predictions or raw predictions for the input data.
         """
-        
+
         # Predict from Input Path
         if isinstance(input_data, str):
             # Validate path
             if os.path.exists(input_data):
                 img = self.load_image(input_data)
             else:
-                raise FileNotFoundError(f"The provided path does not exist: {input_data}")
+                raise FileNotFoundError(
+                    f"The provided path does not exist: {input_data}"
+                )
             self.preds = self.model.predict(img, verbose=0)
             return self.preds if return_raw else self.decoder(self.preds)
 
@@ -692,7 +797,7 @@ class CryptoVisionAI:
             img = input_data
             self.preds = self.model.predict(img, verbose=0)
             return self.preds if return_raw else self.decoder(self.preds)
-        
+
         elif isinstance(input_data, tf.data.Dataset):
             raw_predictions = []
             predictions = []
@@ -707,31 +812,44 @@ class CryptoVisionAI:
                     family_idx = np.argmax(sample_preds[0])
                     genus_idx = np.argmax(sample_preds[1])
                     species_idx = np.argmax(sample_preds[2])
-                    
+
                     # Extract the confidence (probability) for the predicted class
                     family_conf = sample_preds[0][family_idx]
                     genus_conf = sample_preds[1][genus_idx]
                     species_conf = sample_preds[2][species_idx]
-                    
+
                     # Decode the labels from the predicted indices
                     family_label = self.family_names[family_idx]
                     genus_label = self.genus_names[genus_idx]
                     species_label = self.species_names[species_idx]
-                    
-                    predictions.append({
-                        "family": {"label": family_label, "confidence": float(family_conf)},
-                        "genus": {"label": genus_label, "confidence": float(genus_conf)},
-                        "species": {"label": species_label, "confidence": float(species_conf)}
-                    })
+
+                    predictions.append(
+                        {
+                            "family": {
+                                "label": family_label,
+                                "confidence": float(family_conf),
+                            },
+                            "genus": {
+                                "label": genus_label,
+                                "confidence": float(genus_conf),
+                            },
+                            "species": {
+                                "label": species_label,
+                                "confidence": float(species_conf),
+                            },
+                        }
+                    )
             return raw_predictions if return_raw else predictions
-        
+
         else:
-            raise TypeError("Unsupported input type. Supported types: str (path), np.ndarray, tf.data.Dataset, pd.DataFrame")
+            raise TypeError(
+                "Unsupported input type. Supported types: str (path), np.ndarray, tf.data.Dataset, pd.DataFrame"
+            )
 
     def generate_saliency_map(self, level, smooth_samples=20, smooth_noise=0.2):
         """
         Generate a saliency map for a specific prediction level.
-        
+
         Args:
             level (str): One of ['family', 'genus', 'species'].
             smooth_samples (int): Number of smoothing samples.
@@ -741,55 +859,60 @@ class CryptoVisionAI:
         """
         if self.image_array is None:
             raise ValueError("No image loaded. Use predict or load an image first.")
-        
+
         # Select model outputs based on level
-        if level == 'family':
+        if level == "family":
             model = self.family_model
-        elif level == 'genus':
+        elif level == "genus":
             model = self.genus_model
-        elif level == 'species':
+        elif level == "species":
             model = self.species_model
         else:
             raise ValueError("Level must be one of ['family', 'genus', 'species']")
-        
+
         # Predict class and get the predicted index
         preds = self.model.predict(self.image_array, verbose=0)
-        class_index = np.argmax(preds[['family', 'genus', 'species'].index(level)])
-        
+        class_index = np.argmax(preds[["family", "genus", "species"].index(level)])
+
         # Generate saliency map
         score = CategoricalScore([class_index])
         saliency = Saliency(model, model_modifier=ReplaceToLinear(), clone=False)
-        saliency_map = saliency(score, self.image_array, smooth_samples=smooth_samples, smooth_noise=smooth_noise)
-        return (saliency_map)
+        saliency_map = saliency(
+            score,
+            self.image_array,
+            smooth_samples=smooth_samples,
+            smooth_noise=smooth_noise,
+        )
+        return saliency_map
 
     def plot_saliency_overlay(self, saliency_map, figure_size=(15, 8)):
         """
         Plot the saliency map over the original image.
-        
+
         Args:
             saliency_map (np.ndarray): Saliency map to overlay.
             figure_size (tuple): Size of the matplotlib figure.
         """
         if self.image is None or self.image_array is None:
             raise ValueError("No image loaded. Use predict or load an image first.")
-        
-        plt.figure(figsize=figure_size)
-        #plt.subplot(1, 2, 1)
-        #plt.title("Original Image")
-        #plt.imshow(self.image)
-        #plt.axis('off')
 
-        #plt.subplot(1, 2, 2)
+        plt.figure(figsize=figure_size)
+        # plt.subplot(1, 2, 1)
+        # plt.title("Original Image")
+        # plt.imshow(self.image)
+        # plt.axis('off')
+
+        # plt.subplot(1, 2, 2)
         plt.title("Saliency Map Overlay")
         plt.imshow(self.image)
-        plt.imshow(saliency_map[0], cmap='jet', alpha=0.5)
-        plt.axis('off')
+        plt.imshow(saliency_map[0], cmap="jet", alpha=0.5)
+        plt.axis("off")
         plt.show()
 
     def generate_lime_explanation(self, top_labels=3, num_samples=1000):
         """
         Generate LIME explanation for the given image.
-        
+
         Args:
             image_path (str): Path to the input image.
             top_labels (int): Number of top labels to explain.
@@ -799,28 +922,33 @@ class CryptoVisionAI:
         """
         if self.image is None or self.image_array is None:
             raise ValueError("No image loaded. Use predict or load an image first.")
-        
+
         # Load and preprocess the image
         image = np.squeeze(self._image_array)
-        
+
         # Define prediction function for LIME
         def predict_function(images):
             preds = self.model.predict(images, verbose=0)
             return preds[2]
-        
+
         explainer = LimeImageExplainer()
         explanation = explainer.explain_instance(
-            image, 
-            predict_function, 
-            top_labels=top_labels, 
-            num_samples=num_samples
+            image, predict_function, top_labels=top_labels, num_samples=num_samples
         )
         return explanation
 
-    def plot_lime_results(self, explanation, positive_only=False, negative_only=True, hide_rest=True, num_features=5, figure_size=(10, 5)):
+    def plot_lime_results(
+        self,
+        explanation,
+        positive_only=False,
+        negative_only=True,
+        hide_rest=True,
+        num_features=5,
+        figure_size=(10, 5),
+    ):
         """
         Plot the LIME explanation results.
-        
+
         Args:
             explanation (lime.explanation): LIME explanation result.
             label (int): The label index to explain.
@@ -834,14 +962,14 @@ class CryptoVisionAI:
             positive_only=positive_only,
             negative_only=negative_only,
             hide_rest=hide_rest,
-            num_features=num_features
+            num_features=num_features,
         )
-        
+
         plt.figure(figsize=figure_size)
         plt.imshow(self.image)
-        plt.imshow(mark_boundaries(temp, mask), cmap='jet', alpha=0.5)
+        plt.imshow(mark_boundaries(temp, mask), cmap="jet", alpha=0.5)
         plt.title("LIME Explanation")
-        plt.axis('off')
+        plt.axis("off")
         plt.show()
 
 
@@ -849,24 +977,24 @@ class INaturalistScraper:
     def __init__(self, download_dir="images"):
         """
         Initialize the iNaturalist scraper with a directory to save images.
-        
+
         Parameters:
         - download_dir (str): Directory to save downloaded images.
         """
         self.download_dir = download_dir
         if not os.path.exists(download_dir):
             os.makedirs(download_dir)
-    
+
     def fetch_observations(self, taxon_name, rank, per_page=30, page=1):
         """
         Fetch observations for a given taxon name and rank from iNaturalist API.
-        
+
         Args:
             taxon_name (str): Name of the taxon (family, genus, or species).
             rank (str): The rank of the taxon ('family', 'genus', 'species').
             per_page (int): Number of observations to fetch per page.
             page (int): Page number to fetch.
-        
+
         Returns:
             dict: JSON response from the API containing observations.
         """
@@ -876,7 +1004,7 @@ class INaturalistScraper:
             "rank": rank,
             "per_page": per_page,
             "page": page,
-            "photos": True
+            "photos": True,
         }
         response = requests.get(url, params=params)
         if response.status_code == 200:
@@ -888,7 +1016,7 @@ class INaturalistScraper:
     def download_image(self, url, save_path):
         """
         Download an image from a URL and save it to the specified path.
-        
+
         Args:
             url (str): URL of the image to download.
             save_path (str): Local path to save the image.
@@ -896,19 +1024,21 @@ class INaturalistScraper:
         try:
             response = requests.get(url, stream=True)
             if response.status_code == 200:
-                with open(save_path, 'wb') as file:
+                with open(save_path, "wb") as file:
                     for chunk in response.iter_content(1024):
                         file.write(chunk)
                 print(f"Image downloaded: {save_path}")
             else:
-                print(f"Failed to download image from {url} (Status code: {response.status_code})")
+                print(
+                    f"Failed to download image from {url} (Status code: {response.status_code})"
+                )
         except Exception as e:
             print(f"Error downloading image: {e}")
-    
+
     def download_taxon_images(self, taxon_name, rank, max_images=10):
         """
         Download images of a specific taxon (family, genus, or species) from iNaturalist.
-        
+
         Args:
             taxon_name (str): Name of the taxon.
             rank (str): Rank of the taxon ('family', 'genus', 'species').
@@ -917,32 +1047,35 @@ class INaturalistScraper:
         downloaded_count, page = 0, 1
         while downloaded_count < max_images:
             observations = self.fetch_observations(taxon_name, rank, page=page)
-            if not observations or not observations.get('results'):
+            if not observations or not observations.get("results"):
                 print("No more observations found.")
                 break
-            
-            for result in observations['results']:
+
+            for result in observations["results"]:
                 if downloaded_count >= max_images:
                     break
-                for photo in result.get('photos', []):
-                    image_url = photo.get('url')
+                for photo in result.get("photos", []):
+                    image_url = photo.get("url")
                     if image_url:
                         original_url = image_url.replace("square", "original")
-                        image_id = photo.get('id')
-                        extension = original_url.split('.')[-1]
-                        save_path = os.path.join(self.download_dir, f"{taxon_name}_{image_id}.{extension}")
+                        image_id = photo.get("id")
+                        extension = original_url.split(".")[-1]
+                        save_path = os.path.join(
+                            self.download_dir, f"{taxon_name}_{image_id}.{extension}"
+                        )
                         self.download_image(original_url, save_path)
                         downloaded_count += 1
             page += 1
-        print(f"Downloaded {downloaded_count} images for taxon '{taxon_name}' with rank '{rank}'.")
+        print(
+            f"Downloaded {downloaded_count} images for taxon '{taxon_name}' with rank '{rank}'."
+        )
 
 
 class ImageAttributes:
-    
     def __init__(self, image_path):
         self.image_path = Path(image_path)  # Ensure it's a Path object
         self.img = Image.open(self.image_path)
-        
+
         # Basic Attributes
         self.hash = str(imagehash.phash(self.img))  # Perceptual hash
         self.width, self.height = self.img.size  # Dimensions
@@ -980,33 +1113,33 @@ class ImageAttributes:
     def calculate_blur(self):
         """Estimate blur using variance of Laplacian."""
         img_cv = cv2.imread(str(self.image_path), cv2.IMREAD_GRAYSCALE)
-        return round(cv2.Laplacian(img_cv, cv2.CV_64F).var(), 2) if img_cv is not None else None
+        return (
+            round(cv2.Laplacian(img_cv, cv2.CV_64F).var(), 2)
+            if img_cv is not None
+            else None
+        )
 
     def calculate_color_histogram(self):
         """Compute a simple RGB histogram to detect grayscale images."""
         hist = self.img.histogram()
-        return {
-            "R": sum(hist[0:256]), 
-            "G": sum(hist[256:512]), 
-            "B": sum(hist[512:768])
-        }
+        return {"R": sum(hist[0:256]), "G": sum(hist[256:512]), "B": sum(hist[512:768])}
 
     def calculate_dominant_color(self):
         """Compute the dominant color in the image."""
         # Ensure image is in RGB mode
         img = self.img.convert("RGB")
-        
+
         # Convert image to NumPy array
         img_array = np.array(img)
-        
+
         # Ensure it has 3 channels (RGB)
         if len(img_array.shape) == 2:  # Grayscale image, convert to RGB
             img_array = np.stack([img_array] * 3, axis=-1)
-        
+
         # Reshape to a list of pixels and compute the mean color
         pixels = img_array.reshape(-1, 3)
         dominant_color = np.mean(pixels, axis=0)
-        
+
         return tuple(map(int, dominant_color))  # Convert to (R, G, B) format
 
     def extract_exif_metadata(self):
@@ -1014,7 +1147,10 @@ class ImageAttributes:
         try:
             exif_data = self.img._getexif()
             if exif_data:
-                return {ExifTags.TAGS.get(tag, tag): value for tag, value in exif_data.items()}
+                return {
+                    ExifTags.TAGS.get(tag, tag): value
+                    for tag, value in exif_data.items()
+                }
         except AttributeError:
             return {}
         return {}
@@ -1038,7 +1174,7 @@ class ImageAttributes:
             "entropy": self.entropy,
             "blur_score": self.blur_score,
             "dominant_color": self.dominant_color,
-            "flag_small": self.width < min_size and self.height < min_size
+            "flag_small": self.width < min_size and self.height < min_size,
         }
 
     def __repr__(self):
@@ -1055,13 +1191,17 @@ def build_catalog(path: Path, source: str, min_size: int, num_workers: int = Non
     """
     Build dataset by extracting image attributes in parallel.
     """
-    
+
     # Get initial DataFrame
     df = image_dir_pandas(path, source)
-    
+
     # Process images in parallel
     with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        results = list(executor.map(lambda img: ImageAttributes(img).to_dict(min_size), df["image_path"]))
+        results = list(
+            executor.map(
+                lambda img: ImageAttributes(img).to_dict(min_size), df["image_path"]
+            )
+        )
 
     # Remove failed results (None values)
     results = [res for res in results if res is not None]
@@ -1071,19 +1211,20 @@ def build_catalog(path: Path, source: str, min_size: int, num_workers: int = Non
 
     # Merge attributes back with the original metadata
     df = df.merge(df_attributes, on="image_path", how="left")
-    
+
     # Flag duplicates
-    df['duplicates'] = df.duplicated(subset='hash', keep='first')
-    
+    df["duplicates"] = df.duplicated(subset="hash", keep="first")
+
     # Round entropy to 5 digits
-    df['entropy'] = df['entropy'].round(5)
+    df["entropy"] = df["entropy"].round(5)
 
     return df
+
 
 def make_parent_lists(family_labels, genus_labels, species_labels):
     """
     Given parallel arrays of string labels for each sample, returns:
-    • parent_genus: list of length G, mapping genus_idx → family_idx  
+    • parent_genus: list of length G, mapping genus_idx → family_idx
     • parent_species: list of length S, mapping species_idx → genus_idx
 
     Args:
@@ -1096,36 +1237,29 @@ def make_parent_lists(family_labels, genus_labels, species_labels):
     """
     # 1) build sorted class lists and index maps
     families = sorted(set(family_labels))
-    genera   = sorted(set(genus_labels))
-    species  = sorted(set(species_labels))
+    genera = sorted(set(genus_labels))
+    species = sorted(set(species_labels))
 
-    fam2idx = {fam:i for i,fam in enumerate(families)}
-    gen2idx = {gen:i for i,gen in enumerate(genera)}
-    #spe2idx = {spe:i for i,spe in enumerate(species)}
+    fam2idx = {fam: i for i, fam in enumerate(families)}
+    gen2idx = {gen: i for i, gen in enumerate(genera)}
+    # spe2idx = {spe:i for i,spe in enumerate(species)}
 
     # 2) infer true parent maps from your labelled data
     #    use a dict comprehension over zipped pairs
-    genus2family = {
-        gen: fam
-        for gen, fam in set(zip(genus_labels, family_labels))
-    }
-    species2genus = {
-        spe: gen
-        for spe, gen in set(zip(species_labels, genus_labels))
-    }
+    genus2family = {gen: fam for gen, fam in set(zip(genus_labels, family_labels))}
+    species2genus = {spe: gen for spe, gen in set(zip(species_labels, genus_labels))}
 
     # 3) build the lists in index‐order
     parent_genus = [
-        fam2idx[genus2family[gen]]
-        for gen in genera
+        fam2idx[genus2family[gen]] for gen in genera
     ]  # length = len(genera)
 
     parent_species = [
-        gen2idx[species2genus[spe]]
-        for spe in species
+        gen2idx[species2genus[spe]] for spe in species
     ]  # length = len(species)
 
     return parent_genus, parent_species
+
 
 # 1) Base loss: categorical focal + label smoothing
 def categorical_focal_with_smoothing(
@@ -1138,6 +1272,7 @@ def categorical_focal_with_smoothing(
     Returns a loss function y_true, y_pred -> scalar
     combining label smoothing + focal weighting.
     """
+
     def loss_fn(y_true, y_pred):
         # optional: convert logits→probs
         if from_logits:
@@ -1155,12 +1290,14 @@ def categorical_focal_with_smoothing(
         focal_w = alpha * tf.pow(1.0 - p_t, gamma)
 
         return focal_w * ce
+
     return loss_fn
+
 
 # 2) Soft consistency penalty factories
 def make_genus_loss(base_loss, parent_genus, alpha=0.1):
-    parent_genus = tf.constant(parent_genus, dtype=tf.int32)    # shape [G]
-    num_fam = tf.reduce_max(parent_genus) + 1                    # scalar
+    parent_genus = tf.constant(parent_genus, dtype=tf.int32)  # shape [G]
+    num_fam = tf.reduce_max(parent_genus) + 1  # scalar
     # mask[f, g] = 1 if genus g ∈ family f
     children_mask = tf.transpose(
         tf.one_hot(parent_genus, depth=num_fam, dtype=tf.float32),
@@ -1173,7 +1310,7 @@ def make_genus_loss(base_loss, parent_genus, alpha=0.1):
 
         # true genus idx → true family idx
         true_g = tf.argmax(y_true, axis=-1, output_type=tf.int32)  # [batch]
-        true_f = tf.gather(parent_genus, true_g)                   # [batch]
+        true_f = tf.gather(parent_genus, true_g)  # [batch]
         # pick mask row for each example: [batch, G]
         mask_fg = tf.gather(children_mask, true_f)
 
@@ -1182,11 +1319,13 @@ def make_genus_loss(base_loss, parent_genus, alpha=0.1):
         penalty = tf.reduce_mean(illegal_mass)
 
         return ce + alpha * penalty
+
     return loss_fn
 
+
 def make_species_loss(base_loss, parent_species, beta=0.1):
-    parent_species = tf.constant(parent_species, dtype=tf.int32) # shape [S]
-    num_genus = tf.reduce_max(parent_species) + 1                # scalar
+    parent_species = tf.constant(parent_species, dtype=tf.int32)  # shape [S]
+    num_genus = tf.reduce_max(parent_species) + 1  # scalar
     # mask[g, s] = 1 if species s ∈ genus g
     children_mask = tf.transpose(
         tf.one_hot(parent_species, depth=num_genus, dtype=tf.float32),
@@ -1197,11 +1336,46 @@ def make_species_loss(base_loss, parent_species, beta=0.1):
         ce = base_loss(y_true, y_pred)
 
         true_s = tf.argmax(y_true, axis=-1, output_type=tf.int32)  # [batch]
-        true_g = tf.gather(parent_species, true_s)                # [batch]
-        mask_gs = tf.gather(children_mask, true_g)                # [batch, S]
+        true_g = tf.gather(parent_species, true_s)  # [batch]
+        mask_gs = tf.gather(children_mask, true_g)  # [batch, S]
 
         illegal_mass = tf.reduce_sum((1.0 - mask_gs) * y_pred, axis=-1)
         penalty = tf.reduce_mean(illegal_mass)
 
         return ce + beta * penalty
+
     return loss_fn
+
+
+def loss_factory(
+    loss_type: str,
+    parent_genus: list = None,
+    parent_species: list = None,
+    alpha: float = 0.1,
+    beta: float = 0.1,
+    gamma: float = 2.0,
+    smoothing: float = 0.1,
+    from_logits: bool = False,
+):
+    if loss_type == "cfc":
+        loss = tf.keras.losses.CategoricalFocalCrossentropy()
+        return loss, loss, loss
+
+    elif loss_type == "tfcl":
+        if parent_genus is None or parent_species is None:
+            raise ValueError(
+                "parent_genus and parent_species must be provided for tfcl loss"
+            )
+
+        family_loss = categorical_focal_with_smoothing(
+            gamma=gamma,
+            alpha=alpha,
+            smoothing=smoothing,
+            from_logits=from_logits,
+        )
+        genus_loss = make_genus_loss(family_loss, parent_genus, alpha=alpha)
+        species_loss = make_species_loss(family_loss, parent_species, beta=beta)
+        return family_loss, genus_loss, species_loss
+
+    else:
+        raise ValueError(f"Invalid loss type: {loss_type}")
