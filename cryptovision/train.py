@@ -81,6 +81,9 @@ def train_with_wandb(
     parent_genus: list[int],
     parent_species: list[int],
     save: bool = True,
+    scheduler: bool = False,
+    scheduler_factor: float = 0.1,
+    scheduler_epochs: tuple[int, ...] = (30,),
 ):
     # Prepare wandb initialization arguments
     wandb_init_args = {
@@ -136,18 +139,33 @@ def train_with_wandb(
             parent_species=parent_species,
         )
 
+        # Add learning rate scheduler if enabled
+        callbacks = [
+            wandb_cb,
+            early_stop,
+            reduce_lr,
+            checkpoint,
+            taxo_cb,
+            tools.TQDMProgressBar(),
+        ]
+        if scheduler:
+
+            def lr_schedule(epoch):
+                if epoch in scheduler_epochs:
+                    return config["lr"] * scheduler_factor
+                return config["lr"]
+
+            lr_scheduler = tf.keras.callbacks.LearningRateScheduler(lr_schedule)
+            callbacks.append(lr_scheduler)
+            logger.info(
+                f"Learning rate scheduler enabled: will drop by factor {scheduler_factor} at epochs {scheduler_epochs}"
+            )
+
         history = model.fit(
             datasets["train"],
             validation_data=datasets["val"],
             epochs=config["epochs"],
-            callbacks=[
-                wandb_cb,
-                early_stop,
-                reduce_lr,
-                checkpoint,
-                taxo_cb,
-                tools.TQDMProgressBar(),
-            ],
+            callbacks=callbacks,
             verbose=0,
         )
 
