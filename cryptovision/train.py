@@ -324,6 +324,9 @@ def main():
         save=True,
         parent_genus=parent_genus,
         parent_species=parent_species,
+        scheduler=settings["reduce_lr"]["scheduler"],
+        scheduler_factor=settings["reduce_lr"]["scheduler_factor"],
+        scheduler_epochs=settings["reduce_lr"]["scheduler_epochs"],
     )
 
     logger.success("Training Script finished.")
