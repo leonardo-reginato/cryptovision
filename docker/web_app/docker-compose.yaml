@@ -1,0 +1,27 @@
+version: '3'
+
+services:
+  crypto_vision:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ../../../models:/CryptoVision/models
+      - ../../../reports/figures:/CryptoVision/images
+      - ../../../reports/log:/CryptoVision/log
+      - ../../../reports/figures/saved_images:/CryptoVision/saved_images
+      - ./src:/CryptoVision/src
+      - ../../../cryptovision:/CryptoVision/src/cryptovision
+
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+    command: streamlit run /CryptoVision/src/streamlit_app.py --server.port=8501 --server.address=0.0.0.0
+
+  ngrok:
+    image: wernight/ngrok
+    ports:
+      - "4040:4040"
+    environment:
+      - NGROK_AUTH=2gFHzmBoxt2pEJ157mQ2tWGvCva_2mFwxThEVV24dApJaWTT4
+      - NGROK_REGION=us
+      - NGROK_PORT=crypto_vision:8501
