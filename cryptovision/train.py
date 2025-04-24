@@ -83,7 +83,7 @@ def train_with_wandb(
     save: bool = True,
     scheduler: bool = False,
     scheduler_factor: float = 0.1,
-    scheduler_epochs: tuple[int, ...] = (30,),
+    scheduler_epochs: list[int] = [30,],
 ):
     # Prepare wandb initialization arguments
     wandb_init_args = {
@@ -123,6 +123,7 @@ def train_with_wandb(
             factor=config["reduce_lr"]["factor"],
             patience=config["reduce_lr"]["patience"],
             min_lr=config["reduce_lr"]["min"],
+            verbose=1,
         )
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
             os.path.join(output_dir, "checkpoint.weights.h5"),
@@ -150,12 +151,16 @@ def train_with_wandb(
         ]
         if scheduler:
 
-            def lr_schedule(epoch):
+            def lr_schedule(epoch, current_lr):
+                # If this epoch is in the drop schedule, reduce the current LR by the factor
                 if epoch in scheduler_epochs:
-                    return config["lr"] * scheduler_factor
-                return config["lr"]
+                    new_lr = current_lr * scheduler_factor
+                    logger.info(f"[Scheduler] Epoch {epoch}: LR reduced to {new_lr}")
+                    return new_lr
+                # Otherwise, keep whatever LR we have
+                return current_lr
 
-            lr_scheduler = tf.keras.callbacks.LearningRateScheduler(lr_schedule)
+            lr_scheduler = tf.keras.callbacks.LearningRateScheduler(lr_schedule, verbose=1)
             callbacks.append(lr_scheduler)
             logger.info(
                 f"Learning rate scheduler enabled: will drop by factor {scheduler_factor} at epochs {scheduler_epochs}"

@@ -5,7 +5,7 @@
 # General Configuration
 project_name: "ArchCompare" # Project name (used for wandb and directory organization)
 experiment_name: null       # Name of the experiment run or None
-tags: ['Final', 'XL', 'STD']       # List of tags for experiment categorization
+tags: ['Final', 'XL', 'ATT',]       # List of tags for experiment categorization
 image_size: 352             # Target image size (both width and height)
 verbose: false              # Verbosity flag for logging output
 version: auto               # Experiment version identifier (auto uses current timestamp)
@@ -30,7 +30,7 @@ samples_threshold: 90      # Minimum number of samples per class to include
 # =====================================================
 
 pretrain: "rn50v2"         # Pre-trained model backbone (options: rn50v2, rn152v2, efv2b0, efv2b1, vgg16)
-architecture: "std"        # Architectural variant; options: gated, concat, std, att
+architecture: "att"        # Architectural variant; options: gated, concat, std, att
 se_block: true             # SE Block; options: true or false
 shared_dropout: 0.3        # Dropout rate for shared (common) layers
 features_dropout: 0.3      # Dropout rate for feature extraction layers
@@ -66,7 +66,7 @@ reduce_lr:
   min: 0.000001             # Minimum learning rate allowed
   scheduler: true           # Whether to use a learning rate scheduler
   scheduler_factor: 0.2     # Factor by which the learning rate will be reduced
-  scheduler_epochs: [6, 12] # Epochs at which to reduce the learning rate
+  scheduler_epochs: [6, 11] # Epochs at which to reduce the learning rate
 
 # Checkpoint Settings
 checkpoint:
@@ -81,11 +81,11 @@ checkpoint:
 # These settings are specifically applied during the fine-tuning phase.
 
 finetune:
-  weights_path: "/Users/leonardo/Documents/Projects/cryptovision/models/CVisionClassifier/2504.08.1429/final.weights.h5" # Path to the pre-trained model used for fine-tuning.
+  weights_path: "/Users/leonardo/Documents/Projects/cryptovision/models/ArchCompare/2504.23.1040/final.weights.h5" # Path to the pre-trained model used for fine-tuning.
   epochs: 10               # Number of epochs dedicated to fine-tuning
   unfreeze_layers: 75      # Number of layers in the pre-trained module to keep trainable during fine-tuning
   lr: 0.00001              # Learning rate for the fine-tuning phase
-  loss: "categorical_focal_crossentropy"  # Loss function for fine-tuning
+  loss_type: "tfcl"        # Loss function for fine-tuning
   metrics: ["accuracy", "Precision", "Recall", "AUC"]  # Metrics to evaluate during fine-tuning
   loss_weights: [1.0, 1.0, 1.0]  # Loss weights during fine-tuning
   early_stop:
@@ -94,7 +94,7 @@ finetune:
     best_weights: true     # Restore best weights after early stopping
   reduce_lr:
     monitor: "val_loss"    # Metric to monitor for reducing learning rate during fine-tuning
-    factor: 0.5            # Factor for reducing the learning rate during fine-tuning
+    factor: 0.2            # Factor for reducing the learning rate during fine-tuning
     patience: 2            # Patience (in epochs) before reducing the learning rate
     min: 0.0000001         # Minimum learning rate allowed during fine-tuning
   checkpoint:

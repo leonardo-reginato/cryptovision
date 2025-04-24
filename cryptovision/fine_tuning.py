@@ -11,6 +11,7 @@ from loguru import logger
 
 import wandb
 from cryptovision import tools
+from cryptovision.train import TaxonomyAlignmentCallback
 from wandb.integration.keras import WandbMetricsLogger
 
 # Set random seeds for reproducibility
@@ -50,7 +51,9 @@ def finetune_with_wandb(
     save: bool = True,
     scheduler: bool = False,
     scheduler_factor: float = 0.1,
-    scheduler_epochs: tuple[int, ...] = (30,),
+    scheduler_epochs: list[int] = [
+        30,
+    ],
 ):
     # Prepare wandb initialization arguments
     wandb_init_args = {
@@ -85,6 +88,7 @@ def finetune_with_wandb(
             factor=ft_cfg["reduce_lr"]["factor"],
             patience=ft_cfg["reduce_lr"]["patience"],
             min_lr=ft_cfg["reduce_lr"]["min"],
+            verbose=1,
         )
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
             os.path.join(output_dir, "model.weights.h5"),
@@ -96,7 +100,7 @@ def finetune_with_wandb(
         )
 
         # Add taxonomy alignment callback
-        taxo_cb = tools.TaxonomyAlignmentCallback(
+        taxo_cb = TaxonomyAlignmentCallback(
             val_ds=datasets["val"],
             parent_genus=parent_genus,
             parent_species=parent_species,
@@ -113,12 +117,18 @@ def finetune_with_wandb(
         ]
         if scheduler:
 
-            def lr_schedule(epoch):
+            def lr_schedule(epoch, current_lr):
+                # If this epoch is in the drop schedule, reduce the current LR by the factor
                 if epoch in scheduler_epochs:
-                    return ft_cfg["lr"] * scheduler_factor
-                return ft_cfg["lr"]
+                    new_lr = current_lr * scheduler_factor
+                    logger.info(f"[Scheduler] Epoch {epoch}: LR reduced to {new_lr}")
+                    return new_lr
+                # Otherwise, keep whatever LR we have
+                return current_lr
 
-            lr_scheduler = tf.keras.callbacks.LearningRateScheduler(lr_schedule)
+            lr_scheduler = tf.keras.callbacks.LearningRateScheduler(
+                lr_schedule, verbose=1
+            )
             callbacks.append(lr_scheduler)
             logger.info(
                 f"Learning rate scheduler enabled: will drop by factor {scheduler_factor} at epochs {scheduler_epochs}"
@@ -230,7 +240,8 @@ def main():
         input_shape=(settings["image_size"], settings["image_size"], 3),
         shared_dropout=settings["shared_dropout"],
         feat_dropout=settings["features_dropout"],
-        shared_layer_neurons=2048,
+        shared_layer_neurons=settings["shared_layer_neurons"],
+        se_block=settings["se_block"],
         pooling_type="max",
         architecture=settings["architecture"],
         output_neurons=(
