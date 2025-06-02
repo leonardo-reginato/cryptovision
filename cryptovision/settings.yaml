@@ -3,48 +3,48 @@
 # =====================================================
 
 # General Configuration
-project_name: "ArchCompare" # Project name (used for wandb and directory organization)
-experiment_name: null       # Name of the experiment run or None
-tags: ['Mix', 'MixCompare', '299', 'STD']       # List of tags for experiment categorization
-image_size: 299             # Target image size (both width and height)
-verbose: false              # Verbosity flag for logging output
-version: auto               # Experiment version identifier (auto uses current timestamp)
-save: true                  # Flag to enable saving of models and artifacts
-seed: 42                    # Random seed for reproducibility
+project_name: "cryptovision"    # Project name (used for wandb and directory organization)
+experiment_name: "cv_model_001" # Name of the experiment run or None
+tags: []                        # List of tags for experiment categorization
+image_size: 299                 # Target image size (both width and height)
+verbose: true                   # Verbosity flag for logging output
+version: "auto"                 # Experiment version identifier (auto uses current timestamp)
+save: false                     # Flag to enable saving of models and artifacts
+seed: 42                        # Random seed for reproducibility
 
 # Warnings and Logging
-suppress_warnings: true    # Suppress TensorFlow and other system warnings
+suppress_warnings: false        # Suppress TensorFlow and other system warnings
 
 # =====================================================
 # Data Configuration
 # =====================================================
 
-data_path: "/Users/leonardo/Library/CloudStorage/Box-Box/CryptoVision/Data/Images/Sources"  # Root directory for image data
-test_size: 0.15            # Proportion of data to reserve for testing
-validation_size: 0.15      # Proportion of data to reserve for validation
-batch_size: 32             # Batch size for training and evaluation
-samples_threshold: 90      # Minimum number of samples per class to include
+data_path: "/Data/Sources"      # Root directory for image data
+test_size: 0.15                 # Proportion of data to reserve for testing
+validation_size: 0.15           # Proportion of data to reserve for validation
+batch_size: 32                  # Batch size for training and evaluation
+samples_threshold: 90           # Minimum number of samples per class to include
 
 # =====================================================
 # Model Architecture Settings
 # =====================================================
 
-pretrain: "rn50v2"         # Pre-trained model backbone (options: rn50v2, rn152v2, efv2b0, efv2b1, vgg16)
-architecture: "std"        # Architectural variant; options: gated, concat, std, att
-se_block: true             # SE Block; options: true or false
-shared_dropout: 0.3        # Dropout rate for shared (common) layers
-features_dropout: 0.3      # Dropout rate for feature extraction layers
-shared_layer_neurons: 2048 # Number of neurons in the shared layers (e.g., 256, 512, 1024, 2048)
-pooling_type: "max"        # Pooling type; options: "avg" or "max"
+pretrain: "rn50v2"              # Pre-trained model backbone (options: rn50v2, rn152v2, efv2b0, efv2b1, vgg16)
+architecture: "std"             # Architectural variant; options: gated, concat, std, att
+se_block: true                  # SE Block; options: true or false
+shared_dropout: 0.3             # Dropout rate for shared (common) layers
+features_dropout: 0.3           # Dropout rate for feature extraction layers
+shared_layer_neurons: 2048      # Number of neurons in the shared layers (e.g., 256, 512, 1024, 2048)
+pooling_type: "max"             # Pooling type; options: "avg" or "max"
 
 # =====================================================
 # Compilation Settings
 # =====================================================
 
-lr: 0.0005                 # Learning rate for initial training
-loss_type: "tfcl"           # Loss function to use
+lr: 0.0005                      # Learning rate for initial training
+loss_type: "tfcl"               # Loss function to use
 metrics: ["accuracy", "Precision", "Recall", "AUC"]  # Evaluation metrics
-loss_weights: [1.0, 1.0, 1.0]          # Loss weights for each output (family, genus, species)
+loss_weights: [1.0, 1.0, 1.0]   # Loss weights for each output (family, genus, species)
 
 # =====================================================
 # Training Settings
