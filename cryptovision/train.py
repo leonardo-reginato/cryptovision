@@ -10,7 +10,7 @@ import yaml
 from loguru import logger
 
 import wandb
-from cryptovision import tools
+from cryptovision import utils
 from wandb.integration.keras import WandbMetricsLogger
 
 # Set random seeds for reproducibility
@@ -147,7 +147,7 @@ def train_with_wandb(
             reduce_lr,
             checkpoint,
             taxo_cb,
-            tools.TQDMProgressBar(),
+            utils.TQDMProgressBar(),
         ]
         if scheduler:
 
@@ -233,33 +233,27 @@ def main():
         val_size=settings["validation_size"],
         random_state=SEED,
     )
+    
+    data['train'], data['val'], data['test'] = utils.split_dataframe(
+        data['all'], 
+        test_size=settings["test_size"],
+        val_size=settings["validation_size"],
+        random_state=SEED
+    )
 
-    def rename_image_path(df, src_path):
-        df["image_path"] = df["image_path"].apply(
-            lambda x: x.replace(
-                "/Volumes/T7_shield/CryptoVision/Data/Sources",
-                src_path,
-            )
-        )
-        return df
-
-    data["train"] = rename_image_path(data["train"], settings["data_path"])
-    data["val"] = rename_image_path(data["val"], settings["data_path"])
-    data["test"] = rename_image_path(data["test"], settings["data_path"])
-
-    tf_data["train"] = tools.tensorflow_dataset(
+    tf_data["train"] = utils.tensorflow_dataset(
         data["train"],
         batch_size=settings["batch_size"],
         image_size=(settings["image_size"], settings["image_size"]),
         shuffle=False,
     )
-    tf_data["val"] = tools.tensorflow_dataset(
+    tf_data["val"] = utils.tensorflow_dataset(
         data["val"],
         batch_size=settings["batch_size"],
         image_size=(settings["image_size"], settings["image_size"]),
         shuffle=False,
     )
-    tf_data["test"] = tools.tensorflow_dataset(
+    tf_data["test"] = utils.tensorflow_dataset(
         data["test"],
         batch_size=settings["batch_size"],
         image_size=(settings["image_size"], settings["image_size"]),
@@ -286,14 +280,14 @@ def main():
         ),
     )
 
-    parent_genus, parent_species = tools.make_parent_lists(
+    parent_genus, parent_species = utils.make_parent_lists(
         data["train"]["family"].tolist(),
         data["train"]["genus"].tolist(),
         data["train"]["species"].tolist(),
     )
 
     # Get loss functions from factory
-    family_loss, genus_loss, species_loss = tools.loss_factory(
+    family_loss, genus_loss, species_loss = utils.loss_factory(
         loss_type=settings["loss_type"],
         parent_genus=parent_genus,
         parent_species=parent_species,
