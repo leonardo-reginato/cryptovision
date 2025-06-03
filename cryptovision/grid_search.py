@@ -11,7 +11,7 @@ import yaml
 from loguru import logger
 
 import cryptovision.dataset as dataset
-from cryptovision import tools
+from cryptovision import utils
 from cryptovision.models import CryptoVisionModels as cv_models
 from cryptovision.train import train_with_wandb
 
@@ -108,19 +108,19 @@ def main():
             data["val"] = rename_image_path(data["val"], settings["data_path"])
             data["test"] = rename_image_path(data["test"], settings["data_path"])
 
-            tf_data["train"] = tools.tensorflow_dataset(
+            tf_data["train"] = utils.tensorflow_dataset(
                 data["train"],
                 batch_size=settings["batch_size"],
                 image_size=(settings["image_size"], settings["image_size"]),
                 shuffle=False,
             )
-            tf_data["val"] = tools.tensorflow_dataset(
+            tf_data["val"] = utils.tensorflow_dataset(
                 data["val"],
                 batch_size=settings["batch_size"],
                 image_size=(settings["image_size"], settings["image_size"]),
                 shuffle=False,
             )
-            tf_data["test"] = tools.tensorflow_dataset(
+            tf_data["test"] = utils.tensorflow_dataset(
                 data["test"],
                 batch_size=settings["batch_size"],
                 image_size=(settings["image_size"], settings["image_size"]),
@@ -148,20 +148,20 @@ def main():
             )
 
             # Set Loss function
-            parent_genus, parent_species = tools.make_parent_lists(
+            parent_genus, parent_species = utils.make_parent_lists(
                 data["train"]["family"].tolist(),
                 data["train"]["genus"].tolist(),
                 data["train"]["species"].tolist(),
             )
 
             if settings["loss_type"] == "cfc":
-                family_loss, genus_loss, species_loss = tools.loss_factory(
+                family_loss, genus_loss, species_loss = utils.loss_factory(
                     loss_type="cfc"
                 )
                 logger.warning("Loss Function selected -> CFC")
 
             elif settings["loss_type"] == "tfcl":
-                family_loss, genus_loss, species_loss = tools.loss_factory(
+                family_loss, genus_loss, species_loss = utils.loss_factory(
                     loss_type="tfcl",
                     parent_genus=parent_genus,
                     parent_species=parent_species,
