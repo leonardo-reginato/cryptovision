@@ -233,9 +233,9 @@ def main():
         val_size=settings["validation_size"],
         random_state=SEED,
     )
-    
+
     data['train'], data['val'], data['test'] = utils.split_dataframe(
-        data['all'], 
+        data['all'],
         test_size=settings["test_size"],
         val_size=settings["validation_size"],
         random_state=SEED
