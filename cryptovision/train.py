@@ -25,6 +25,7 @@ import json
 import os
 import random
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -96,8 +97,11 @@ def start_log(out_dir):
 def setup_tf(general):
     random.seed(general["seed"])
     np.random.seed(general["seed"])
+    # Hide TF's C++ info/warnings and the harmless ptxas errors on Windows; Python errors still raise
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
     import tensorflow as tf
 
+    tf.get_logger().setLevel("ERROR")  # "Using a while_loop for converting ..." warnings
     tf.random.set_seed(general["seed"])
     # CUDA has no deterministic AdjustContrastv2 (RandomContrast): GPU training fails with it on
     if general.get("deterministic"):
@@ -139,8 +143,13 @@ def load_splits(cfg, max_per_species=None):
             df.groupby("species", group_keys=False).head(max_per_species) for df in (train, val, test)
         )
     train, val, test = (df.reset_index(drop=True) for df in (train, val, test))
-    print("Images per species used for training:")
-    print(data["species"].value_counts().to_string())
+    counts = data["species"].value_counts()
+    counts_path = Path(cfg["general"]["output_dir"]) / "species_counts.csv"
+    counts.rename_axis("species").rename("images").to_csv(counts_path)
+    print(
+        f"Images per species: min {counts.min()} ({counts.idxmin()}), median {int(counts.median())}, "
+        f"max {counts.max()} ({counts.idxmax()}); full list in {counts_path}"
+    )
     print(
         f"Dataset: {len(data)} images | {data['family'].nunique()} families, "
         f"{data['genus'].nunique()} genera, {data['species'].nunique()} species | "
@@ -217,21 +226,65 @@ def compile_model(tf, cfg, model, stage):
 def callbacks(tf, stage, csv_path):
     es, rlr = stage["early_stopping"], stage["reduce_lr_on_plateau"]
     cbs = [
+        epoch_logger(tf, stage["epochs"]),  # first: reads the LR before ReduceLROnPlateau changes it
         tf.keras.callbacks.EarlyStopping(
-            monitor=es["monitor"], patience=es["patience"], restore_best_weights=es["restore_best_weights"]
+            monitor=es["monitor"], patience=es["patience"],
+            restore_best_weights=es["restore_best_weights"], verbose=1,
         ),
         tf.keras.callbacks.ReduceLROnPlateau(
-            monitor=rlr["monitor"], factor=rlr["factor"], patience=rlr["patience"],
-            min_lr=rlr["min_lr"], verbose=1,
+            monitor=rlr["monitor"], factor=rlr["factor"], patience=rlr["patience"], min_lr=rlr["min_lr"],
         ),
         tf.keras.callbacks.CSVLogger(str(csv_path)),
     ]
     if stage.get("lr_schedule"):
         factor, drops = stage["lr_schedule"]["factor"], stage["lr_schedule"]["epochs"]
         cbs.append(tf.keras.callbacks.LearningRateScheduler(
-            lambda epoch, lr: lr * factor if epoch in drops else lr, verbose=1
+            lambda epoch, lr: lr * factor if epoch in drops else lr
         ))
     return cbs
+
+
+def epoch_logger(tf, epochs):
+    """A progress bar during each epoch (console only) and one summary line per epoch."""
+    console = sys.__stdout__  # bypass the log file: the bar redraws itself with \r
+    live = console.isatty()
+
+    class EpochLogger(tf.keras.callbacks.Callback):
+        def on_train_begin(self, logs=None):
+            print(f"{'':12}{'train':>30}   {'validation':>30}")
+            print(f"{'epoch':<8}{'loss':>8}  {'acc: fam  gen  spe':>20}   "
+                  f"{'loss':>8}  {'acc: fam  gen  spe':>20}   {'lr':>7}  {'time':>7}")
+
+        def on_epoch_begin(self, epoch, logs=None):
+            self.epoch, self.start = epoch + 1, time.time()
+
+        def on_train_batch_end(self, batch, logs=None):
+            if not live:
+                return
+            steps, done = self.params.get("steps"), batch + 1
+            if steps:
+                filled = 25 * done // steps
+                eta = (time.time() - self.start) / done * (steps - done)
+                bar = f"[{'=' * filled}{'.' * (25 - filled)}] {done}/{steps}  ETA {_hms(eta)}"
+            else:
+                bar = f"{done} batches"
+            console.write(f"\r{self.epoch}/{epochs}  {bar}  loss {logs['loss']:.4f}   ")
+            console.flush()
+
+        def on_epoch_end(self, epoch, logs=None):
+            if live:
+                console.write("\r" + " " * 79 + "\r")
+            acc = lambda prefix: "  ".join(f"{logs[f'{prefix}{lvl}_accuracy']:.3f}" for lvl in LEVELS)
+            lr = float(np.array(self.model.optimizer.learning_rate))
+            print(f"{f'{self.epoch}/{epochs}':<8}{logs['loss']:>8.4f}  {acc(''):>20}   "
+                  f"{logs['val_loss']:>8.4f}  {acc('val_'):>20}   {lr:>7.1e}  "
+                  f"{_hms(time.time() - self.start):>7}")
+
+    return EpochLogger()
+
+
+def _hms(seconds):
+    return str(datetime.timedelta(seconds=int(seconds)))
 
 
 def evaluate(model, tf_test, df_test, class_names, parent_genus, parent_species):
@@ -299,23 +352,28 @@ def run(tf, cfg, arch, splits, out_root):
     # Stage 1: backbone frozen
     stage = cfg["training"]
     compile_model(tf, cfg, model, stage)
+    print(f"\nStage 1/2: backbone frozen, up to {stage['epochs']} epochs")
     hist = model.fit(
         tf_ds["train"], validation_data=tf_ds["val"], epochs=stage["epochs"],
-        callbacks=callbacks(tf, stage, out / "history.csv"), verbose=2,
+        callbacks=callbacks(tf, stage, out / "history.csv"), verbose=0,
     )
     (out / "history.json").write_text(json.dumps(hist.history, default=float))
     model.save_weights(str(out / "final.weights.h5"))
     stage1_eval, _ = evaluate(model, tf_ds["test"], df_test, class_names, parent_genus, parent_species)
     (out / "evaluations.json").write_text(json.dumps(stage1_eval, indent=2))
-    print("Stage 1 test overall:", stage1_eval["overall"])
+    print("Stage 1 test:", _overall(stage1_eval["overall"]))
 
     # Stage 2: unfreeze the top backbone layers
     stage = cfg["finetune"]
     unfreeze_top_layers(model, stage["unfreeze_last_layers"])
     compile_model(tf, cfg, model, stage)
+    print(
+        f"\nStage 2/2: fine-tuning the top {stage['unfreeze_last_layers']} backbone layers, "
+        f"up to {stage['epochs']} epochs"
+    )
     hist = model.fit(
         tf_ds["train"], validation_data=tf_ds["val"], epochs=stage["epochs"],
-        callbacks=callbacks(tf, stage, out / "finetune_history.csv"), verbose=2,
+        callbacks=callbacks(tf, stage, out / "finetune_history.csv"), verbose=0,
     )
     (out / "finetune_history.json").write_text(json.dumps(hist.history, default=float))
     model.save_weights(str(out / "finetuned.weights.h5"))
@@ -323,8 +381,12 @@ def run(tf, cfg, arch, splits, out_root):
     (out / "finetuned_evaluations.json").write_text(json.dumps(final_eval, indent=2))
     preds.to_csv(out / "finetuned_predictions.csv", index=False)
     plot_history(out)
-    print("Final test overall:", final_eval["overall"])
+    print("Final test:  ", _overall(final_eval["overall"]))
     return final_eval["overall"]
+
+
+def _overall(metrics):
+    return "  ".join(f"{k} {v:.4f}" for k, v in metrics.items())
 
 
 def plot_history(out):

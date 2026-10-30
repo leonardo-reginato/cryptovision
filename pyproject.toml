@@ -23,7 +23,6 @@ dependencies = [
   "pandas",
   "scikit-learn",
   "PyYAML",
-  "loguru",
   "pillow",
   "matplotlib",
   "tf-keras-vis",

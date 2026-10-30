@@ -23,7 +23,6 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from loguru import logger
 from sklearn.model_selection import train_test_split
 
 LEVELS = ["family", "genus", "species"]
@@ -61,7 +60,7 @@ def make_catalog(image_dir, catalog_path=None) -> pd.DataFrame:
     catalog = pd.DataFrame(rows)
     catalog_path.parent.mkdir(parents=True, exist_ok=True)
     catalog.to_csv(catalog_path, index=False)
-    logger.info(
+    print(
         f"Wrote {catalog_path}: {len(catalog)} images, {catalog['family'].nunique()} families, "
         f"{catalog['genus'].nunique()} genera, {catalog['species'].nunique()} species."
     )
@@ -86,7 +85,7 @@ def load_catalogs(catalogs) -> pd.DataFrame:
             raise ValueError(f"{path} is missing columns {missing}")
         df["image_path"] = [str(path.parent / p) for p in df["image_path"]]  # absolute paths stay as-is
         frames.append(df)
-        logger.info(f"Loaded {path} with {len(df)} images.")
+        print(f"Loaded {path} with {len(df)} images.")
     return pd.concat(frames, ignore_index=True)
 
 
@@ -98,12 +97,12 @@ def quality_control(
     if remove_duplicates and "hash" in data.columns:
         n = len(data)
         data = data.drop_duplicates(subset="hash", keep="first")
-        logger.info(f"Removed {n - len(data)} duplicate images.")
+        print(f"Removed {n - len(data)} duplicate images.")
     counts = data[stratify_by].value_counts()
     keep = counts[counts > min_samples_per_class].index
     n = len(data)
     data = data[data[stratify_by].isin(keep)]
-    logger.info(
+    print(
         f"Removed {n - len(data)} images of {len(counts) - len(keep)} {stratify_by} classes "
         f"with {min_samples_per_class} images or fewer; {len(data)} images remain."
     )
@@ -130,7 +129,7 @@ def split_data(
             stratify=train_val[stratify_by],
             random_state=seed,
         )
-    logger.info(f"Split: train {len(train)}, validation {len(val)}, test {len(test)} images.")
+    print(f"Split: train {len(train)}, validation {len(val)}, test {len(test)} images.")
     return train, val, test
 
 
