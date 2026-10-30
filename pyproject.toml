@@ -1,0 +1,47 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "cryptovision"
+version = "1.0.0"
+description = "Taxonomy-aware deep learning for identifying cryptic coral reef fishes (family, genus, species)."
+authors = [
+  { name = "Leonardo Reginato" },
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License"
+]
+requires-python = "~=3.10"
+# Loose ranges; environments/ pins the exact versions used for the paper's models
+dependencies = [
+  "tensorflow>=2.10,<2.17",
+  "numpy<2",
+  "pandas",
+  "scikit-learn",
+  "PyYAML",
+  "loguru",
+  "pillow",
+  "matplotlib",
+  "tf-keras-vis",
+]
+
+[project.urls]
+Paper = "https://doi.org/10.1371/journal.pone.0349646"
+
+[tool.black]
+line-length = 99
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+)/
+'''
+
+[tool.isort]
+known-first-party = ["cryptovision"]
+force-sort-within-sections = true

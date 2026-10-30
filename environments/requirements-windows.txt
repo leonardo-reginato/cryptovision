@@ -1,0 +1,13 @@
+# Native Windows with an NVIDIA GPU. TF 2.10 is the last release with native-Windows
+# GPU support (Keras 2); CUDA 11.2 and cuDNN 8.1 come from windows.yml.
+tensorflow==2.10.1
+numpy==1.23.5
+protobuf==3.19.6
+h5py==3.11.0
+pandas==2.2.0
+scikit-learn==1.4.0
+PyYAML==6.0.1
+loguru==0.7.2
+pillow==10.3.0
+matplotlib==3.8.3
+tf-keras-vis==0.8.7

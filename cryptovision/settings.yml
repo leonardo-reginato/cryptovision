@@ -1,0 +1,91 @@
+# CryptoVision: settings used for the paper's architecture comparison (Table 1)
+# Reginato et al., PLOS ONE (2026), https://doi.org/10.1371/journal.pone.0349646
+#
+# Default config of `python -m cryptovision.train`; copy and edit it, then pass --config.
+
+general:
+  seed: 42
+  mixed_precision: true               # mixed_float16
+  deterministic: false                # true fails on GPU (no deterministic RandomContrast)
+  output_dir: "outputs"
+
+data:
+  # A catalog CSV, or an image folder laid out as <family>/<genus>/<species>/<images>
+  # (its catalog.csv is created on first use). A list of catalogs is combined.
+  catalog: "${CRYPTOVISION_DATA}"
+  # Quality control: drop duplicate images (by the catalog's hash column), then keep
+  # species with MORE than min_samples_per_class images
+  min_samples_per_class: 90
+  remove_duplicates: true
+  stratify_by: "species"
+  # Used only when the catalog has no 'split' column; fractions of the full set (70/15/15)
+  test_fraction: 0.15
+  val_fraction: 0.15
+  batch_size: 32
+  # Paper dataset (paper_catalog.csv): 26,514 images, 20 families, 62 genera,
+  # 113 species; train 18,559 / val 3,977 / test 3,978
+
+model:
+  backbone: "rn50v2"                  # ResNet50V2, ImageNet weights
+  image_size: 352
+  architecture: "gated"               # std | concat | gated | att
+  use_se_block: true
+  pooling_type: "max"
+  features_dropout: 0.3
+  shared_layer_neurons: 2048
+  shared_dropout: 0.3
+  augmentation:                       # inside the model, training only; always includes a
+    rotation: 0.1                     # horizontal flip and a random crop to image_size
+    zoom: [0.05, 0.1]
+    contrast: 0.2
+    brightness: 0.2
+    translation: 0.1
+    gaussian_noise: 0.2
+
+loss:
+  type: "tfcl"                        # Taxonomy-Focal Cross-Loss, Eqs. 1-5
+  focal_alpha: 0.1
+  focal_gamma: 2.0
+  lambda_genus: 0.1                   # Eq. 3: -log p_fam[parent(y_gen)]
+  lambda_species: 0.1                 # Eq. 4: -log p_gen[parent(y_spe)]
+  loss_weights: [1.0, 1.0, 1.0]       # family, genus, species
+
+training:                             # stage 1: backbone frozen
+  epochs: 15
+  optimizer: "adam"
+  learning_rate: 0.0005
+  lr_schedule:                        # multiply LR by factor at these epochs (0-based)
+    factor: 0.2
+    epochs: [6, 11]
+  early_stopping:
+    monitor: "val_loss"
+    patience: 3
+    restore_best_weights: true
+  reduce_lr_on_plateau:
+    monitor: "val_loss"
+    factor: 0.2
+    patience: 2
+    min_lr: 1.0e-6
+
+finetune:                             # stage 2: top backbone layers trainable
+  epochs: 10
+  unfreeze_last_layers: 75
+  optimizer: "rmsprop"
+  learning_rate: 1.0e-5
+  early_stopping:
+    monitor: "val_loss"
+    patience: 4
+    restore_best_weights: true
+  reduce_lr_on_plateau:
+    monitor: "val_loss"
+    factor: 0.2
+    patience: 2
+    min_lr: 1.0e-7
+
+evaluation:                           # Table 1, on the test split
+  overall_label: "family genus species"   # metrics on the joint label
+  accuracy: "balanced_accuracy"
+  precision: "weighted"
+  recall: "weighted"
+  f1: "weighted"
+  tas: true                           # Taxonomic Alignment Score, Eq. 7

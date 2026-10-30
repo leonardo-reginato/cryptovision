@@ -1,0 +1,11 @@
+# conda env create -f environments/windows.yml && conda activate cryptovision
+name: cryptovision
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - cudatoolkit=11.2
+  - cudnn=8.1.0
+  - pip
+  - pip:
+      - -r requirements-windows.txt

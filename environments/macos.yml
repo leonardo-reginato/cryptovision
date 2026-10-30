@@ -1,0 +1,9 @@
+# conda env create -f environments/macos.yml && conda activate cryptovision
+name: cryptovision
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - -r requirements-macos.txt

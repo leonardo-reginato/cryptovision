@@ -1,0 +1,290 @@
+{
+  "models": {
+    "std": {
+      "file": "std.h5",
+      "url": "",
+      "sha256": "13a92ba4f47984ab8ec0a25037e43ecf3d0b4fabc21008766f3deebc8aff6712",
+      "size_bytes": 115063840,
+      "architecture": "std",
+      "image_size": 352,
+      "class_names": "class_names.json",
+      "source": "original",
+      "trained_with_keras": "3.5.0",
+      "run": "2504.23.1253",
+      "test_metrics": {
+        "family": {
+          "accuracy": 0.9391,
+          "precision": 0.9538,
+          "mean_confidence": 0.9422,
+          "std_confidence": 0.1273,
+          "recall": 0.9532,
+          "f1": 0.9533
+        },
+        "genus": {
+          "accuracy": 0.9121,
+          "precision": 0.9337,
+          "mean_confidence": 0.9409,
+          "std_confidence": 0.1354,
+          "recall": 0.9311,
+          "f1": 0.9313
+        },
+        "species": {
+          "accuracy": 0.8681,
+          "precision": 0.8943,
+          "mean_confidence": 0.9025,
+          "std_confidence": 0.1748,
+          "recall": 0.8904,
+          "f1": 0.8903
+        },
+        "overall": {
+          "accuracy": 0.8321,
+          "precision": 0.9182,
+          "recall": 0.8625,
+          "f1": 0.8869,
+          "tas": 0.9414278531925591
+        }
+      }
+    },
+    "concat": {
+      "file": "concat.h5",
+      "url": "",
+      "sha256": "d1cbf4a5c90fe2bcb4941561ade0088595e8e84f9a5f0abf37ee80bd03ad58d8",
+      "size_bytes": 115098472,
+      "architecture": "concat",
+      "image_size": 352,
+      "class_names": "class_names.json",
+      "source": "original",
+      "trained_with_keras": "3.5.0",
+      "run": "2504.23.1544",
+      "test_metrics": {
+        "family": {
+          "accuracy": 0.9315,
+          "precision": 0.9486,
+          "mean_confidence": 0.94,
+          "std_confidence": 0.132,
+          "recall": 0.9477,
+          "f1": 0.9478
+        },
+        "genus": {
+          "accuracy": 0.9127,
+          "precision": 0.9316,
+          "mean_confidence": 0.9413,
+          "std_confidence": 0.1349,
+          "recall": 0.9299,
+          "f1": 0.9298
+        },
+        "species": {
+          "accuracy": 0.8672,
+          "precision": 0.8939,
+          "mean_confidence": 0.9033,
+          "std_confidence": 0.1739,
+          "recall": 0.8904,
+          "f1": 0.8902
+        },
+        "overall": {
+          "accuracy": 0.8307,
+          "precision": 0.915,
+          "recall": 0.859,
+          "f1": 0.8836,
+          "tas": 0.9414278531925591
+        }
+      }
+    },
+    "gated": {
+      "file": "gated.h5",
+      "url": "",
+      "sha256": "751673f15a85c8827469881a39f6c9122722959f6b03a1c9f41bdaf3d478c5cd",
+      "size_bytes": 116457208,
+      "architecture": "gated",
+      "image_size": 352,
+      "class_names": "class_names.json",
+      "source": "original",
+      "trained_with_keras": "3.5.0",
+      "run": "2504.23.1104",
+      "test_metrics": {
+        "family": {
+          "accuracy": 0.9429,
+          "precision": 0.9502,
+          "mean_confidence": 0.9426,
+          "std_confidence": 0.1255,
+          "recall": 0.9495,
+          "f1": 0.9495
+        },
+        "genus": {
+          "accuracy": 0.9124,
+          "precision": 0.9305,
+          "mean_confidence": 0.9314,
+          "std_confidence": 0.1413,
+          "recall": 0.9286,
+          "f1": 0.9287
+        },
+        "species": {
+          "accuracy": 0.8646,
+          "precision": 0.8934,
+          "mean_confidence": 0.8959,
+          "std_confidence": 0.1748,
+          "recall": 0.8901,
+          "f1": 0.8896
+        },
+        "overall": {
+          "accuracy": 0.8321,
+          "precision": 0.9054,
+          "recall": 0.8632,
+          "f1": 0.8812,
+          "tas": 0.9547511312217195
+        }
+      }
+    },
+    "att": {
+      "file": "att.h5",
+      "url": "",
+      "sha256": "9babdaf00d4e2a8d9b200448f8f3064ff9f2a3a222449febbabfc096ff78e1bd",
+      "size_bytes": 117233664,
+      "architecture": "att",
+      "image_size": 352,
+      "class_names": "class_names.json",
+      "source": "original",
+      "trained_with_keras": "3.5.0",
+      "run": "2504.23.1737",
+      "test_metrics": {
+        "family": {
+          "accuracy": 0.9456,
+          "precision": 0.9551,
+          "mean_confidence": 0.9421,
+          "std_confidence": 0.1281,
+          "recall": 0.9545,
+          "f1": 0.9545
+        },
+        "genus": {
+          "accuracy": 0.9102,
+          "precision": 0.9298,
+          "mean_confidence": 0.9399,
+          "std_confidence": 0.1363,
+          "recall": 0.9281,
+          "f1": 0.9279
+        },
+        "species": {
+          "accuracy": 0.8666,
+          "precision": 0.8939,
+          "mean_confidence": 0.9053,
+          "std_confidence": 0.1715,
+          "recall": 0.8904,
+          "f1": 0.8901
+        },
+        "overall": {
+          "accuracy": 0.8385,
+          "precision": 0.9122,
+          "recall": 0.8663,
+          "f1": 0.8861,
+          "tas": 0.9519859225741578
+        }
+      }
+    },
+    "web_only": {
+      "file": "web_only.h5",
+      "url": "",
+      "sha256": "ba700663294efe2d3602f273fef979efade5657ccbe1e6ea5cb775e0ea90fb6a",
+      "size_bytes": 114957344,
+      "architecture": "std",
+      "image_size": 299,
+      "class_names": "class_names_mixcompare.json",
+      "source": "original",
+      "trained_with_keras": "3.5.0",
+      "run": "2505.02.1553",
+      "test_metrics": {
+        "family": {
+          "accuracy": 0.8132,
+          "precision": 0.8446,
+          "recall": 0.8031,
+          "f1": 0.809,
+          "mcc": 0.7807,
+          "kappa": 0.7779,
+          "mean_confidence": 0.8328,
+          "std_confidence": 0.1953
+        },
+        "genus": {
+          "accuracy": 0.7187,
+          "precision": 0.8057,
+          "recall": 0.7346,
+          "f1": 0.741,
+          "mcc": 0.7283,
+          "kappa": 0.7268,
+          "mean_confidence": 0.8165,
+          "std_confidence": 0.2245
+        },
+        "species": {
+          "accuracy": 0.6189,
+          "precision": 0.719,
+          "recall": 0.6189,
+          "f1": 0.6216,
+          "mcc": 0.6165,
+          "kappa": 0.6152,
+          "mean_confidence": 0.7365,
+          "std_confidence": 0.2696
+        },
+        "overall": {
+          "accuracy": 0.5673,
+          "precision": 0.7937,
+          "recall": 0.5673,
+          "f1": 0.6242,
+          "mcc": 0.5649,
+          "kappa": 0.5641,
+          "tas": 0.7729559748427673
+        }
+      }
+    },
+    "mixed": {
+      "file": "mixed.h5",
+      "url": "",
+      "sha256": "6364ae9c9eb82588d3d2a67e8acd7d18c44ce4b6c2b6341d79dc47c15bf49322",
+      "size_bytes": 114957344,
+      "architecture": "std",
+      "image_size": 299,
+      "class_names": "class_names_mixcompare.json",
+      "source": "original",
+      "trained_with_keras": "3.5.0",
+      "run": "2505.02.1623",
+      "test_metrics": {
+        "family": {
+          "accuracy": 0.9005,
+          "precision": 0.9244,
+          "recall": 0.9214,
+          "f1": 0.9214,
+          "mcc": 0.9105,
+          "kappa": 0.9103,
+          "mean_confidence": 0.9169,
+          "std_confidence": 0.1464
+        },
+        "genus": {
+          "accuracy": 0.8848,
+          "precision": 0.9058,
+          "recall": 0.8981,
+          "f1": 0.8982,
+          "mcc": 0.8952,
+          "kappa": 0.895,
+          "mean_confidence": 0.9141,
+          "std_confidence": 0.1581
+        },
+        "species": {
+          "accuracy": 0.8597,
+          "precision": 0.8656,
+          "recall": 0.8597,
+          "f1": 0.8584,
+          "mcc": 0.8585,
+          "kappa": 0.8584,
+          "mean_confidence": 0.8708,
+          "std_confidence": 0.1938
+        },
+        "overall": {
+          "accuracy": 0.8182,
+          "precision": 0.9023,
+          "recall": 0.8182,
+          "f1": 0.8521,
+          "mcc": 0.8168,
+          "kappa": 0.8167,
+          "tas": 0.9119496855345912
+        }
+      }
+    }
+  }
+}

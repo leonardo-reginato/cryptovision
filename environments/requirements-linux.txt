@@ -1,0 +1,14 @@
+# Linux / WSL2 with an NVIDIA GPU. TF 2.16 + Keras 3, as used for the paper's models.
+tensorflow[and-cuda]==2.16.2
+keras==3.5.0
+protobuf==3.20.3
+ml-dtypes==0.3.2
+h5py==3.11.0
+numpy==1.26.4
+pandas==2.2.0
+scikit-learn==1.4.0
+PyYAML==6.0.1
+loguru==0.7.2
+pillow==10.3.0
+matplotlib==3.8.3
+tf-keras-vis==0.8.7
