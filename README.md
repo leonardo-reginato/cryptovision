@@ -1,5 +1,7 @@
 # CryptoVision
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23827343.svg)](https://doi.org/10.5281/zenodo.23827343)
+
 Taxonomy-aware deep learning for identifying cryptic coral reef fishes at three levels
 (family, genus, species) from images.
 
@@ -220,6 +222,18 @@ loss exactly as written above.
   journal = {PLOS ONE},
   year    = {2026},
   doi     = {10.1371/journal.pone.0349646}
+}
+```
+
+To cite the code and released models (archived on Zenodo):
+
+```bibtex
+@software{reginato2026cryptovision_code,
+  title     = {CryptoVision},
+  author    = {Reginato, Leonardo},
+  publisher = {Zenodo},
+  year      = {2026},
+  doi       = {10.5281/zenodo.23827343}
 }
 ```
 
