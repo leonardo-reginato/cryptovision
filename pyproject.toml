@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "cryptovision"
-version = "1.0.0"
+version = "1.0.1"
 description = "Taxonomy-aware deep learning for identifying cryptic coral reef fishes (family, genus, species)."
 authors = [
   { name = "Leonardo Reginato" },
